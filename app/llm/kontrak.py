@@ -36,6 +36,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from types import UnionType
 from typing import Any, Generic, Protocol, TypeVar, Union, get_args, get_origin, get_type_hints
 
 T = TypeVar("T")
@@ -113,8 +114,16 @@ class AdapterLLM(Protocol):
 
 
 def _opsional(tipe: Any) -> tuple[bool, Any]:
-    """Bongkar `X | None` jadi (True, X)."""
-    if get_origin(tipe) is Union:
+    """Bongkar `X | None` jadi (True, X).
+
+    Menerima kedua bentuk union: `typing.Union[X, None]` **dan** PEP 604
+    (`X | None`). Keduanya sah di skema; `get_origin` mengembalikan objek yang
+    berbeda (`typing.Union` vs `types.UnionType`) tergantung sintaks — dan pada
+    Python < 3.14, `X | None` selalu `types.UnionType`. Memeriksa hanya
+    `typing.Union` membuat field opsional bersintaks `|` lolos tanpa dikoersi:
+    `qty: Decimal | None` tetap `str`, lalu pecah saat dibandingkan.
+    """
+    if get_origin(tipe) in (Union, UnionType):
         args = [a for a in get_args(tipe) if a is not type(None)]
         if len(args) != len(get_args(tipe)):
             return True, args[0] if len(args) == 1 else Union[tuple(args)]

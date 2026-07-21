@@ -17,10 +17,17 @@ Fondasi + jantung HPP (Pilar 4). Yang sudah jalan & teruji:
   non-material) dan **cakupan HPP** ("tercakup 94% omzet").
 - **Seeder Bu Sari** (`app/seeds/bu_sari.py`): ±2 bulan transaksi, produk, resep,
   harga bahan bertanggal.
-- **Migrasi Alembic** awal + **13 unit test** (`tests/test_hpp.py`).
+- **Adapter LLM provider-agnostic** (`app/llm/`) + **tools** `catat_transaksi` &
+  `koreksi_transaksi` (`app/tools/`).
+- **Slice chat pertama (end-to-end):** kontrak render ber-versi (`app/kanal/`),
+  orchestrator deterministik tipis, **API FastAPI** (`app/api/`, `/sesi` & `/chat`),
+  dan **UI chat web** mobile-first (`web/`, Next.js). Pencatatan & koreksi kategori
+  jalan nyata; kartu untung/HPP masih **stub jujur** ("belum tersambung").
+- **Migrasi Alembic** + suite unit test (jalankan `pipenv run pytest`).
 
-Belum digarap: adapter LLM, orchestrator, tools (`catat_transaksi`, dll.), API
-FastAPI, impor (P2), laporan/skor/dokumen (P3). Urutan garap **1+4 → 2 → 3**
+Belum digarap: `hitung_hpp`/`tanya_hpp` sebagai tool (service-nya sudah matang),
+router tool berbasis LLM, auth/multi-tenant nyata, impor (P2), laporan/skor/dokumen
+(P3), adaptor WhatsApp. Urutan garap **1+4 → 2 → 3**
 ([docs/04-rencana-kerja.md](docs/04-rencana-kerja.md)).
 
 ## Mulai cepat
@@ -29,9 +36,17 @@ Manajemen dependensi pakai **pipenv**:
 
 ```bash
 pipenv install --dev                      # buat venv + pasang deps
-pipenv run pytest                         # 13 passed
+pipenv run pytest                         # semua test hijau
 pipenv run alembic upgrade head
 pipenv run python -m app.seeds.bu_sari
+```
+
+Menjalankan UI chat (dua proses — detail di [`web/README.md`](web/README.md)):
+
+```bash
+pipenv install --categories api                   # sekali: fastapi + uvicorn
+pipenv run uvicorn app.api.main:app --port 8000   # API kanal: /sesi & /chat
+cd web && npm install && npm run dev              # UI http://localhost:3000
 ```
 
 Perintah lengkap: [CLAUDE.md §Perintah](CLAUDE.md).

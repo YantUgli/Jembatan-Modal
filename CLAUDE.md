@@ -108,6 +108,18 @@ pipenv run python -m app.seeds.bu_sari   # seed data demo Bu Sari (idempoten)
 pipenv run ruff check . ; pipenv run ruff format .       # lint + format
 ```
 
+Menjalankan slice chat (dua proses — backend FastAPI + UI web; lihat `web/README.md`):
+
+```bash
+pipenv install --categories api                     # sekali: fastapi + uvicorn
+pipenv run uvicorn app.api.main:app --port 8000     # API kanal: /sesi & /chat
+cd web && npm install && npm run dev                # UI mobile http://localhost:3000 (BFF → :8000)
+```
+
+> `LLM_*` di `.env` hanya diperlukan jalur **pencatatan** (ekstraksi NL). Jalur
+> `koreksi_kategori` (chip) & kartu untung (stub) tak memanggil LLM. FastAPI
+> internal — browser hanya bicara dengan BFF Route Handler Next.js.
+
 > Runtime deps datang dari paket lokal editable (`-e .`) → sumber kebenaran versi
 > tetap `pyproject.toml`; Pipfile hanya menautkannya + dev tools. Extra `api`/`pdf`
 > jadi **kategori** Pipfile, sengaja dipisah agar core (skema + service + test)

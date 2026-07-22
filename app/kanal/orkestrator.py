@@ -1,10 +1,12 @@
 """Orchestrator deterministik tipis — memetakan tool/service ke kartu kontrak.
 
 Slice 1 sengaja **tanpa** loop function-calling LLM: adapter yang ada hari ini
-adalah permukaan dua-verba (`ekstrak`/`narasikan`), dan jalur bervolume-tertinggi
-(pencatatan) tidak membutuhkannya — `catat_transaksi` sudah memanggil ekstraksi
-di dalamnya. Di sini kode kita yang memilih tool, lalu membungkus hasilnya jadi
-`PesanKeluar`. Router multi-tool berbasis LLM menyusul di slice berikutnya.
+adalah permukaan dua-verba (`ekstrak`/`narasikan`). Router intent bahasa-bebas
+(`tangani_pesan` → `catat_transaksi`/`tanya_untung`/`tanya_keuangan`) memakai
+ulang `ekstrak()` yang sama lewat tool `pilih_aksi` — bukan loop function-calling
+baru (keputusan.md 2026-07-22: "Router intent bahasa-bebas"). Di sini kode kita
+yang membaca hasil klasifikasi lalu memilih tool, lalu membungkus hasilnya jadi
+`PesanKeluar`.
 
 Isolasi tenant (aturan #6): tiap fungsi menerima `business_id` dan setiap query
 di sini difilter olehnya — input pengguna dianggap tak tepercaya.
@@ -30,7 +32,7 @@ from app.kanal.kontrak import (
     PilihanKategori,
 )
 from app.llm.kontrak import AdapterLLM
-from app.llm.skema import AksiKoreksi, Koreksi
+from app.llm.skema import AksiKoreksi, AksiRouter, Koreksi
 from app.models import Business, JenisTransaksi, Transaction
 from app.services.angka import _dec, _rapikan, _uang, rupiah
 from app.services.catat import terapkan_koreksi
@@ -42,7 +44,7 @@ from app.services.hpp import (
     hitung_hpp_semua,
 )
 from app.services.laba import hitung_laba_periode
-from app.tools import Klarifikasi, Tercatat, catat_transaksi
+from app.tools import Klarifikasi, Tercatat, catat_transaksi, pilih_aksi
 
 __all__ = [
     "tangani_pesan",
@@ -79,13 +81,34 @@ def tangani_pesan(
     teks: str,
     hari_ini: date,
 ) -> PesanKeluar:
-    """Satu kalimat pengguna → kartu. Jalur pencatatan (Pilar 1)."""
+    """Satu kalimat pengguna → kartu.
+
+    Diarahkan dulu lewat `pilih_aksi` (klasifikasi enum tertutup, bukan
+    tool-calling — lihat docstring modul). `tanya_hpp` belum punya rute sendiri:
+    dipetakan ke `kartu_untung` (margin per produk) sampai ada kartu HPP yang
+    kontraknya benar-benar beda. Tak yakin/tak cocok → default pencatatan
+    (Pilar 1), sama seperti perilaku sebelum router ini ada.
+    """
+    aksi = pilih_aksi(adapter, teks)
+    if aksi is AksiRouter.tanya_untung:
+        mulai, selesai = _periode_bulan_berjalan(hari_ini)
+        return kartu_untung(session, business_id, mulai, selesai)
+    if aksi is AksiRouter.tanya_keuangan:
+        mulai, selesai = _periode_bulan_berjalan(hari_ini)
+        return kartu_keuangan(session, business_id, mulai, selesai)
+
     hasil = catat_transaksi(session, adapter, business_id, teks, hari_ini)
     if isinstance(hasil, Klarifikasi):
         return PesanKeluar(
             [KartuKlarifikasi(pertanyaan=hasil.pertanyaan, yang_kurang=hasil.yang_kurang)]
         )
     return PesanKeluar([_kartu_konfirmasi(session, business_id, hasil)])
+
+
+def _periode_bulan_berjalan(hari_ini: date) -> tuple[date, date]:
+    """Awal bulan berjalan s/d hari ini — default yang sama dengan jalur chip
+    (`_periode` di app/api/main.py) saat `mulai`/`selesai` tak disebut."""
+    return hari_ini.replace(day=1), hari_ini
 
 
 def koreksi_kategori(
@@ -194,13 +217,9 @@ def _baris_untung(h: HasilHpp) -> BarisUntung:
             diketahui=True,
             hpp_tampil=rupiah(h.hpp_per_unit) if h.hpp_per_unit is not None else None,
             satuan_hpp=h.satuan_hpp,
-            harga_jual_tampil=(
-                rupiah(h.harga_jual) if h.harga_jual is not None else None
-            ),
+            harga_jual_tampil=(rupiah(h.harga_jual) if h.harga_jual is not None else None),
             laba_kotor_tampil=(
-                rupiah(h.laba_kotor_per_unit)
-                if h.laba_kotor_per_unit is not None
-                else None
+                rupiah(h.laba_kotor_per_unit) if h.laba_kotor_per_unit is not None else None
             ),
         )
 
@@ -272,9 +291,7 @@ def kartu_untung(
     )
 
 
-def kartu_keuangan(
-    session: Session, business_id: int, mulai: date, selesai: date
-) -> PesanKeluar:
+def kartu_keuangan(session: Session, business_id: int, mulai: date, selesai: date) -> PesanKeluar:
     """Untung usaha periode — **angka utama** (aturan #9, keputusan "dua angka").
 
     Omzet − (belanja + operasional) = laba bersih; prive dikecualikan. Angka dari
@@ -333,8 +350,7 @@ def kartu_keuangan(
     )
 
 
-_BULAN = ["", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
-          "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+_BULAN = ["", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
 
 
 def _periode(mulai: date, selesai: date) -> str:
@@ -350,9 +366,7 @@ def _periode(mulai: date, selesai: date) -> str:
 # ── Pembangun kartu ──────────────────────────────────────────────────────────
 
 
-def _kartu_konfirmasi(
-    session: Session, business_id: int, hasil: Tercatat
-) -> KartuKonfirmasi:
+def _kartu_konfirmasi(session: Session, business_id: int, hasil: Tercatat) -> KartuKonfirmasi:
     """Baca-balik transaksi yang baru dibuat → isi baris terstruktur.
 
     Dibaca ulang dari DB (difilter `business_id`) supaya angka di kartu berasal
@@ -396,9 +410,7 @@ def _qty_tampil(t: Transaction) -> str | None:
     return " ".join(x for x in (angka, t.satuan) if x)
 
 
-def _ambil_milik(
-    session: Session, business_id: int, transaksi_id: int
-) -> Transaction | None:
+def _ambil_milik(session: Session, business_id: int, transaksi_id: int) -> Transaction | None:
     """Ambil transaksi HANYA bila milik usaha ini & masih berlaku (aturan #6).
 
     Difilter di query, bukan diperiksa setelah diambil.

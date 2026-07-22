@@ -21,12 +21,15 @@ from app.models.base import JenisTransaksi
 
 __all__ = [
     "AksiKoreksi",
+    "AksiRouter",
     "BarisTransaksi",
     "HasilCatat",
     "JenisTransaksi",
     "Koreksi",
+    "PilihanAksi",
     "instruksi_catat",
     "instruksi_koreksi",
+    "instruksi_router",
 ]
 
 
@@ -159,9 +162,7 @@ def instruksi_koreksi(hari_ini: date, ringkasan_transaksi: str) -> str:
     `ringkasan_transaksi` dirender kode dari baris DB — bukan teks bebas dari
     pengguna — supaya isi buku tidak bisa disetir lewat kalimat masukan.
     """
-    return _INSTRUKSI_KOREKSI.format(
-        hari_ini=hari_ini.isoformat(), transaksi=ringkasan_transaksi
-    )
+    return _INSTRUKSI_KOREKSI.format(hari_ini=hari_ini.isoformat(), transaksi=ringkasan_transaksi)
 
 
 def instruksi_catat(hari_ini: date) -> str:
@@ -171,3 +172,60 @@ def instruksi_catat(hari_ini: date) -> str:
     supaya evaluasi bisa direproduksi dan hasilnya tidak berubah tiap hari.
     """
     return _INSTRUKSI.format(hari_ini=hari_ini.isoformat())
+
+
+class AksiRouter(str, enum.Enum):
+    """Ke mana kalimat bebas pengguna diarahkan. Enum tertutup — router hanya
+    boleh memilih dari sini, tidak pernah mengarang aksi lain (keputusan.md
+    2026-07-22: "Router intent bahasa-bebas")."""
+
+    catat_transaksi = "catat_transaksi"
+    tanya_untung = "tanya_untung"
+    tanya_keuangan = "tanya_keuangan"
+
+
+@dataclass
+class PilihanAksi:
+    aksi: AksiRouter
+
+
+_INSTRUKSI_ROUTER = """
+Pemilik warung Indonesia mengirim satu kalimat ke asisten pencatatan keuangan.
+Tugasmu HANYA memilih `aksi` — TEPAT SATU dari tiga label di bawah, tidak
+pernah label lain.
+
+- "catat_transaksi" bila kalimat menceritakan uang masuk/keluar yang perlu
+  dicatat ("laku 5 kotak risol 75rb", "beli minyak 38rb", "ambil 60rb buat
+  jajan anak").
+- "tanya_untung" bila pengguna bertanya untung/modal/margin PER PRODUK
+  ("untung risol berapa sih", "modal per kotaknya berapa", "produk mana yang
+  paling untung").
+- "tanya_keuangan" bila pengguna bertanya kondisi keuangan usaha SECARA
+  UMUM (bukan per produk) — termasuk minta laporan/ringkasan/rekap tanpa
+  rincian ("untung saya bulan ini berapa", "gimana sih keuangan saya",
+  "rugi apa untung minggu ini", "omzet saya berapa", "laporan singkat",
+  "rekap dong", "ringkasan keuangan").
+
+PENTING — jangan minta detail tambahan:
+- Periode/tanggal TIDAK PERNAH kamu perlukan. Sistem di luar prompt ini sudah
+  otomatis memakai bulan berjalan kalau pengguna tidak menyebut periode.
+  "laporan singkat" atau "gimana keuangan saya" sudah cukup jelas ->
+  "tanya_keuangan", walau tanpa periode.
+- Jangan pernah membalas dengan field selain `aksi` (tidak ada "periode",
+  "jenis_laporan", atau semacamnya — skema hanya punya satu field: `aksi`).
+
+Hanya akui tidak yakin (`_gagal`) kalau kalimatnya benar-benar tidak cocok
+satu pun dari tiga label (sapaan, obrolan di luar topik) atau bisa dibaca
+mendua ANTARA dua label di atas. Ketiadaan detail seperti periode/tanggal
+BUKAN alasan untuk tidak yakin.
+""".strip()
+
+
+def instruksi_router() -> str:
+    """Instruksi sistem untuk mengklasifikasikan kalimat bebas ke `AksiRouter`.
+
+    Tidak menyuntik data pengguna apa pun ke dalam prompt — klasifikasi murni
+    dari kalimatnya sendiri, jadi instruksinya statis (ramah prompt caching,
+    02-arsitektur.md §6a).
+    """
+    return _INSTRUKSI_ROUTER

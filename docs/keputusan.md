@@ -5,6 +5,43 @@
 
 ---
 
+## 2026-07-22 — Router intent bahasa-bebas: pakai ulang `ekstrak()`, bukan verba tool-calling baru
+
+- **Konteks:** `tanya_untung`/`tanya_keuangan` hanya bisa dipicu chip terstruktur;
+  kalimat bebas ("untung saya bulan ini berapa?") jatuh ke jalur `catat_transaksi`.
+  `orkestrator.py` sudah menandai ini sebagai utang desain, dan `02-arsitektur.md`
+  §1 membayangkan penyelesaiannya lewat "function calling" generik — bertentangan
+  dengan filosofi `kontrak.py` yang sengaja membatasi adapter ke dua verba
+  (`ekstrak`/`narasikan`) demi provider-agnostic.
+
+- **Keputusan:** router intent **tidak** menambah verba baru ke `AdapterLLM`. Ia
+  memakai ulang `ekstrak()` dengan skema baru — `PilihanAksi{aksi: AksiRouter}`,
+  `AksiRouter` enum tertutup (`catat_transaksi`/`tanya_untung`/`tanya_keuangan`) —
+  persis pola `Koreksi`/`instruksi_koreksi` yang sudah ada. `tanya_hpp` dipetakan
+  ke rute `tanya_untung` untuk sekarang; belum ada kartu HPP yang kontraknya
+  benar-benar beda.
+
+- **Alasan:** klasifikasi ke enum tertutup secara struktural adalah ekstraksi
+  (bahasa → data terstruktur), bukan LLM memutuskan langkah — orchestrator tetap
+  yang membaca hasilnya dan memilih fungsi. Nol perubahan ke `AdapterLLM`/suite
+  konformansinya berarti nol biaya tambahan saat provider ditukar. Regex/keyword
+  ditolak karena variasi bahasa informal terlalu luas dan gagalnya senyap;
+  menunda ke chip-only selamanya ditolak karena kebutuhannya sudah eksplisit di
+  rencana kerja Tahap 2a.
+
+- **Konsekuensi:** `app/llm/skema.py` bertambah `AksiRouter`/`PilihanAksi`/
+  `instruksi_router`; `app/tools/pilih_aksi.py` baru; `tangani_pesan` di
+  `orkestrator.py` dapat langkah routing sebelum fallback `catat_transaksi`
+  (fallback = perilaku hari ini, tak berubah). `main.py`'s dispatch chip
+  (`aksi == "tanya_untung"` dst.) tidak disentuh. Ekstraksi periode dari kalimat
+  bebas ("bulan lalu") **tidak** termasuk — periode default = bulan berjalan,
+  sama seperti jalur chip. ⚠ `docs/02-arsitektur.md` §1 perlu direvisi terpisah —
+  diagram/teksnya masih menjanjikan agent loop function-calling generik yang
+  `kontrak.py` sengaja tidak akan bangun; entri ini tidak mencabut kontradiksi
+  itu, hanya menandainya.
+
+---
+
 ## 2026-07-20 — Buku transaksi append-only: koreksi tidak pernah menimpa
 
 - **Konteks:** tool `koreksi_transaksi` dibangun karena tanpa itu setiap salah

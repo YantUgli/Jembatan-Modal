@@ -28,8 +28,16 @@ def test_catat_menghasilkan_kartu_konfirmasi_angka_dari_db(session: Session, bus
     adapter = AdapterPalsu(
         jawaban_ekstrak={
             teks: _hasil_ekstrak(
-                [{"jenis": "pemasukan", "nominal": 75000, "tanggal": "2026-07-21",
-                  "produk": "risol", "qty": 5, "satuan": "kotak"}]
+                [
+                    {
+                        "jenis": "pemasukan",
+                        "nominal": 75000,
+                        "tanggal": "2026-07-21",
+                        "produk": "risol",
+                        "qty": 5,
+                        "satuan": "kotak",
+                    }
+                ]
             )
         }
     )
@@ -55,7 +63,10 @@ def test_catat_menghasilkan_kartu_konfirmasi_angka_dari_db(session: Session, bus
     # Empat chip kategori, tepat satu aktif (yang tersimpan).
     aktif = [c for c in baris["kategori_pilihan"] if c["aktif"]]
     assert [c["nilai"] for c in baris["kategori_pilihan"]] == [
-        "pemasukan", "pengeluaran", "operasional", "prive",
+        "pemasukan",
+        "pengeluaran",
+        "operasional",
+        "prive",
     ]
     assert len(aktif) == 1 and aktif[0]["nilai"] == "pemasukan"
 
@@ -105,7 +116,9 @@ def test_koreksi_kategori_isolasi_tenant(session: Session, business: Business, t
     teks = "masuk 20rb"
     adapter = AdapterPalsu(
         jawaban_ekstrak={
-            teks: _hasil_ekstrak([{"jenis": "pemasukan", "nominal": 20000, "tanggal": "2026-07-21"}])
+            teks: _hasil_ekstrak(
+                [{"jenis": "pemasukan", "nominal": 20000, "tanggal": "2026-07-21"}]
+            )
         }
     )
     keluar = tangani_pesan(session, adapter, business.id, teks, HARI_INI)
@@ -116,6 +129,54 @@ def test_koreksi_kategori_isolasi_tenant(session: Session, business: Business, t
     assert hasil.ke_dict()["kartu"][0]["tipe"] == TipeKartu.klarifikasi.value
     # Baris asli tak tersentuh.
     assert session.get(Transaction, tid).dibatalkan_pada is None
+
+
+def test_kalimat_bebas_tanya_keuangan_dirutekan_ke_kartu_keuangan(
+    session: Session, business: Business
+):
+    """Router intent (keputusan.md 2026-07-22): kalimat bebas, bukan chip."""
+    teks = "untung saya bulan ini berapa?"
+    adapter = AdapterPalsu(jawaban_ekstrak={teks: {"aksi": "tanya_keuangan"}})
+
+    keluar = tangani_pesan(session, adapter, business.id, teks, HARI_INI)
+
+    assert keluar.ke_dict()["kartu"][0]["tipe"] == TipeKartu.keuangan.value
+    assert session.scalars(select(Transaction)).all() == []  # tidak ikut mencatat
+
+
+def test_kalimat_bebas_tanya_untung_dirutekan_ke_kartu_untung(session: Session, business: Business):
+    teks = "untung risol per kotak berapa"
+    adapter = AdapterPalsu(jawaban_ekstrak={teks: {"aksi": "tanya_untung"}})
+
+    keluar = tangani_pesan(session, adapter, business.id, teks, HARI_INI)
+
+    assert keluar.ke_dict()["kartu"][0]["tipe"] == TipeKartu.untung.value
+
+
+def test_router_tak_yakin_tetap_jatuh_ke_pencatatan(session: Session, business: Business):
+    """Router `Gagal`/ambigu → perilaku sebelum router ini ada, tak berubah."""
+    teks = "laku 5 kotak risol tadi, 75rb"
+    adapter = AdapterPalsu(
+        jawaban_ekstrak={
+            teks: _hasil_ekstrak(
+                [
+                    {
+                        "jenis": "pemasukan",
+                        "nominal": 75000,
+                        "tanggal": "2026-07-21",
+                        "produk": "risol",
+                        "qty": 5,
+                        "satuan": "kotak",
+                    }
+                ]
+            )
+        }
+    )
+
+    keluar = tangani_pesan(session, adapter, business.id, teks, HARI_INI)
+
+    assert keluar.ke_dict()["kartu"][0]["tipe"] == TipeKartu.konfirmasi.value
+    assert session.scalars(select(Transaction)).one().deskripsi == "risol"
 
 
 def test_sapaan_dari_data_usaha(session: Session, business: Business):

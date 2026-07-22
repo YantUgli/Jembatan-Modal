@@ -6,6 +6,7 @@ import type { Kartu, KartuSapaan, PesanKeluar } from "@/lib/kontrak";
 import { Mark } from "./Brand";
 import {
   BelumDiketahuiView,
+  KeuanganView,
   KlarifikasiView,
   KonfirmasiView,
   NarasiView,
@@ -16,10 +17,16 @@ type Item =
   | { id: number; kind: "user"; teks: string }
   | { id: number; kind: "kartu"; kartu: Kartu };
 
-const SUGGESTIONS: { label: string; teks?: string; untung?: boolean }[] = [
+const SUGGESTIONS: {
+  label: string;
+  teks?: string;
+  untung?: boolean;
+  keuangan?: boolean;
+}[] = [
   { label: "laku 5 kotak risol, 75rb", teks: "laku 5 kotak risol tadi, 75rb" },
   { label: "beli minyak 2 liter 38rb", teks: "beli minyak goreng 2 liter 38rb" },
-  { label: "Untung risol berapa?", untung: true },
+  { label: "Untung per porsi?", untung: true },
+  { label: "Laporan singkat", keuangan: true },
 ];
 
 export default function Chat() {
@@ -96,21 +103,25 @@ export default function Chat() {
     [sibuk, pushKartu, errorTenang],
   );
 
-  const tanyaUntung = useCallback(async () => {
-    if (sibuk) return;
-    setItems((prev) => [...prev, { id: nextId(), kind: "user", teks: "Untung risol berapa?" }]);
-    setSibuk(true);
-    setTyping(true);
-    try {
-      const p = await kirimChat({ aksi: "tanya_untung" });
-      pushKartu(p.kartu);
-    } catch {
-      errorTenang("Maaf, lagi ada gangguan. Coba lagi sebentar ya.");
-    } finally {
-      setTyping(false);
-      setSibuk(false);
-    }
-  }, [sibuk, pushKartu, errorTenang]);
+  // Aksi query (tombol, bukan NL): dorong bubble pengguna lalu render kartunya.
+  const tanyaAksi = useCallback(
+    async (aksi: "tanya_untung" | "tanya_keuangan", label: string) => {
+      if (sibuk) return;
+      setItems((prev) => [...prev, { id: nextId(), kind: "user", teks: label }]);
+      setSibuk(true);
+      setTyping(true);
+      try {
+        const p = await kirimChat({ aksi });
+        pushKartu(p.kartu);
+      } catch {
+        errorTenang("Maaf, lagi ada gangguan. Coba lagi sebentar ya.");
+      } finally {
+        setTyping(false);
+        setSibuk(false);
+      }
+    },
+    [sibuk, pushKartu, errorTenang],
+  );
 
   // Ketuk chip kategori → koreksi. Kartu konfirmasi diperbarui di tempat.
   const koreksi = useCallback(
@@ -193,7 +204,13 @@ export default function Chat() {
               key={s.label}
               className="sugg"
               disabled={sibuk}
-              onClick={() => (s.untung ? tanyaUntung() : kirimTeks(s.teks!))}
+              onClick={() =>
+                s.untung
+                  ? tanyaAksi("tanya_untung", s.label)
+                  : s.keuangan
+                    ? tanyaAksi("tanya_keuangan", s.label)
+                    : kirimTeks(s.teks!)
+              }
             >
               {s.label}
             </button>
@@ -249,6 +266,8 @@ function KartuView({
       return <BelumDiketahuiView kartu={kartu} />;
     case "untung":
       return <UntungView kartu={kartu} />;
+    case "keuangan":
+      return <KeuanganView kartu={kartu} />;
     default:
       return null;
   }

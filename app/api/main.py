@@ -22,7 +22,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import session_scope
-from app.kanal import kartu_untung_stub, koreksi_kategori, sapaan, tangani_pesan
+from app.kanal import (
+    kartu_keuangan,
+    kartu_untung,
+    koreksi_kategori,
+    sapaan,
+    tangani_pesan,
+)
 from app.llm import AdapterLLM, AdapterOpenAIKompatibel
 from app.models import Business, JenisTransaksi, User
 from app.seeds.bu_sari import NO_HP
@@ -76,9 +82,23 @@ def business_saat_ini(session: Session = Depends(dapatkan_sesi)) -> Business:
 
 class PesanMasuk(BaseModel):
     teks: str | None = None
-    aksi: str | None = None  # "koreksi_kategori" | "tanya_untung"
+    aksi: str | None = None  # "koreksi_kategori" | "tanya_untung" | "tanya_keuangan"
     transaksi_id: int | None = None
     jenis: str | None = None  # nilai JenisTransaksi untuk koreksi_kategori
+    # Periode opsional (ISO) untuk tanya_untung/tanya_keuangan; default bulan
+    # berjalan diselesaikan server-side.
+    mulai: date | None = None
+    selesai: date | None = None
+
+
+def _periode(pesan: PesanMasuk, hari_ini: date) -> tuple[date, date]:
+    """Periode laporan. Default = **bulan berjalan** (tanggal 1 s/d hari ini) —
+    sejalan dengan cara pemilik warung berpikir "bulan ini" & irama laporan bank.
+    Bisa dioverride lewat `mulai`/`selesai`.
+    """
+    mulai = pesan.mulai or hari_ini.replace(day=1)
+    selesai = pesan.selesai or hari_ini
+    return mulai, selesai
 
 
 # ── Rute ─────────────────────────────────────────────────────────────────────
@@ -114,8 +134,12 @@ def chat(
         return koreksi_kategori(session, business.id, pesan.transaksi_id, jenis).ke_dict()
 
     if pesan.aksi == "tanya_untung":
-        # Stub jujur — belum menyentuh DB/LLM (lihat orkestrator.kartu_untung_stub).
-        return kartu_untung_stub().ke_dict()
+        mulai, selesai = _periode(pesan, hari_ini)
+        return kartu_untung(session, business.id, mulai, selesai).ke_dict()
+
+    if pesan.aksi == "tanya_keuangan":
+        mulai, selesai = _periode(pesan, hari_ini)
+        return kartu_keuangan(session, business.id, mulai, selesai).ke_dict()
 
     if pesan.teks and pesan.teks.strip():
         return tangani_pesan(session, adapter, business.id, pesan.teks.strip(), hari_ini).ke_dict()

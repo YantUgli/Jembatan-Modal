@@ -2,7 +2,7 @@
 // Satu-satunya sumber kebenaran bentuk tetap di Python; berkas ini menyalin
 // bentuknya agar UI bertipe. Bila `VERSI_KONTRAK` naik, sesuaikan di sini.
 
-export const VERSI_KONTRAK = 1;
+export const VERSI_KONTRAK = 2;
 
 export type TipeKartu =
   | "sapaan"
@@ -10,6 +10,7 @@ export type TipeKartu =
   | "konfirmasi"
   | "klarifikasi"
   | "untung"
+  | "keuangan"
   | "belum_diketahui";
 
 export interface KartuSapaan {
@@ -61,10 +62,48 @@ export interface KartuKlarifikasi {
   teks_alt: string;
 }
 
+export interface BarisUntung {
+  nama: string;
+  jenis: string; // "produksi" | "reseller"
+  diketahui: boolean;
+  hpp_tampil: string | null;
+  satuan_hpp: string | null;
+  harga_jual_tampil: string | null;
+  laba_kotor_tampil: string | null;
+  sebab: string;
+  yang_kurang: string[];
+}
+
 export interface KartuUntung {
   tipe: "untung";
   pesan: string;
-  status: string;
+  produk: BarisUntung[];
+  cakupan_tampil: string; // "78%"
+  status: string; // lengkap | sebagian | belum_diketahui
+  teks_alt: string;
+}
+
+export interface BarisPos {
+  kategori: string;
+  jenis: string; // "pengeluaran" | "operasional"
+  nominal_tampil: string;
+}
+
+export interface KartuKeuangan {
+  tipe: "keuangan";
+  periode_tampil: string;
+  omzet_tampil: string;
+  belanja_tampil: string;
+  operasional_tampil: string;
+  biaya_tampil: string;
+  laba_bersih_tampil: string;
+  untung: boolean;
+  ada_data: boolean;
+  cakupan_tampil: string; // "78%"
+  prive_tampil: string | null;
+  rasio_prive_tampil: string | null;
+  pos_biaya: BarisPos[];
+  catatan: string[];
   teks_alt: string;
 }
 
@@ -82,6 +121,7 @@ export type Kartu =
   | KartuKonfirmasi
   | KartuKlarifikasi
   | KartuUntung
+  | KartuKeuangan
   | KartuBelumDiketahui;
 
 export interface PesanKeluar {
@@ -93,4 +133,5 @@ export interface PesanKeluar {
 export type ChatBody =
   | { teks: string }
   | { aksi: "tanya_untung" }
+  | { aksi: "tanya_keuangan" }
   | { aksi: "koreksi_kategori"; transaksi_id: number; jenis: string };

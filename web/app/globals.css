@@ -546,7 +546,168 @@ button {
   background: var(--amber-lembut);
   padding: 4px 11px;
   border-radius: 20px;
-  margin-top: 10px;
+  margin-top: 12px;
+}
+
+/* Catatan kaki kartu (kualifikasi jujur, nada tenang) */
+.kartu-catatan {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--tinta-60);
+  font-weight: 500;
+}
+
+/* ── Kartu untung: daftar produk (laba kotor per porsi) ── */
+.untung-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.u-row {
+  background: #f7f3ec;
+  border-radius: 14px;
+  padding: 13px 15px;
+}
+.u-row-kurang {
+  background: rgba(201, 123, 44, 0.06);
+  border: 1px dashed rgba(201, 123, 44, 0.35);
+}
+.u-kepala {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.u-nama {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.u-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--tinta-50);
+  background: rgba(42, 38, 34, 0.06);
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+.u-laba {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--hijau);
+  margin-top: 7px;
+  line-height: 1;
+}
+.u-porsi {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tinta-50);
+  letter-spacing: 0;
+}
+.u-modal {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--tinta-60);
+  margin-top: 6px;
+}
+.u-belum {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--amber);
+  margin-top: 7px;
+}
+.u-sebab {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--amber-tinta2);
+  margin-top: 4px;
+}
+
+/* ── Kartu keuangan: untung usaha periode ── */
+.keu-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.keu-kap {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--hijau);
+  text-transform: uppercase;
+}
+.keu-periode {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tinta-45);
+}
+.keu-laba {
+  font-size: 38px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--hijau);
+  margin-top: 6px;
+  line-height: 1;
+  overflow-wrap: break-word;
+}
+.keu-laba.rugi {
+  color: var(--amber);
+}
+.keu-rumus {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--tinta-50);
+  margin-top: 7px;
+}
+.keu-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 15px;
+}
+.keu-lab {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tinta-45);
+}
+.keu-val {
+  font-size: 16px;
+  font-weight: 700;
+  margin-top: 3px;
+}
+.keu-prive {
+  color: var(--amber-tinta);
+}
+.keu-pos {
+  margin-top: 14px;
+  border-top: 1px solid var(--garis);
+  padding-top: 12px;
+}
+.keu-pos-kap {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tinta-45);
+  margin-bottom: 8px;
+}
+.keu-pos-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 4px 0;
+}
+.keu-pos-row span:first-child {
+  color: var(--tinta-60);
 }
 
 /* ── Komposer ──────────────────────────────────────────────────────────── */

@@ -26,7 +26,7 @@ from dataclasses import asdict, dataclass, field
 
 from enum import Enum
 
-VERSI_KONTRAK = 1
+VERSI_KONTRAK = 2
 
 
 class TipeKartu(str, Enum):
@@ -35,6 +35,7 @@ class TipeKartu(str, Enum):
     konfirmasi = "konfirmasi"
     klarifikasi = "klarifikasi"
     untung = "untung"
+    keuangan = "keuangan"
     belum_diketahui = "belum_diketahui"
 
 
@@ -142,23 +143,100 @@ class KartuKlarifikasi:
 
 
 @dataclass
-class KartuUntung:
-    """Kartu untung/HPP.
+class BarisUntung:
+    """Satu produk pada kartu untung — **laba kotor dari bahan per porsi**.
 
-    SLICE 1 = **stub jujur**: service HPP sudah matang tapi belum di-wire sebagai
-    tool, jadi kartu ini mengaku "belum tersambung" alih-alih mengarang angka.
-    Saat di-wire (slice berikutnya) field angka ditambah di sini, dengan
-    kualifikasi wajib "laba kotor dari bahan" (bukan untung bersih usaha).
+    ⛔ Bukan "untung usaha" (aturan #9): ini parsial, alat keputusan harga, belum
+    dikurangi biaya lain (gas, listrik, tenaga). Bila HPP belum bisa dihitung,
+    `diketahui=False` dan angka-angkanya `None` — **bukan "Rp0"** (aturan #2).
+    `sebab` & `yang_kurang` menerjemahkan `StatusHpp` ke bahasa warung.
+    """
+
+    nama: str
+    jenis: str  # "produksi" | "reseller"
+    diketahui: bool
+    hpp_tampil: str | None = None
+    satuan_hpp: str | None = None
+    harga_jual_tampil: str | None = None
+    laba_kotor_tampil: str | None = None
+    sebab: str = ""  # kenapa belum diketahui, satu kalimat warung
+    yang_kurang: list[str] = field(default_factory=list)
+
+
+@dataclass
+class KartuUntung:
+    """Kartu untung/HPP — **laba kotor dari bahan per porsi**, per produk.
+
+    ⛔ Aturan #9: kartu ini TIDAK pernah menyebut angkanya "untung usaha". Untung
+    bersih usaha adalah angka lain (kartu keuangan), dan dua angka itu tidak
+    pernah dilebur. `pesan` membawa kualifikasi itu; `cakupan_tampil` menampilkan
+    berapa persen penjualan yang modalnya sudah terhitung (aturan #2).
     """
 
     pesan: str
-    status: str = "belum_tersambung"  # belum_tersambung → nanti: lengkap|belum_diketahui
+    produk: list[BarisUntung] = field(default_factory=list)
+    cakupan_tampil: str = ""  # "78%"
+    status: str = "lengkap"  # lengkap | sebagian | belum_diketahui
     teks_alt: str = ""
     tipe: str = TipeKartu.untung.value
 
     def __post_init__(self) -> None:
         if not self.teks_alt:
-            self.teks_alt = self.pesan
+            baris = [
+                (
+                    f"{b.nama}: {b.laba_kotor_tampil}/porsi (modal {b.hpp_tampil})"
+                    if b.diketahui
+                    else f"{b.nama}: belum diketahui — {b.sebab}"
+                )
+                for b in self.produk
+            ]
+            self.teks_alt = "\n".join([self.pesan, *baris]).strip()
+
+
+@dataclass
+class BarisPos:
+    """Satu pos biaya terbesar pada kartu keuangan."""
+
+    kategori: str
+    jenis: str  # "pengeluaran" | "operasional"
+    nominal_tampil: str
+
+
+@dataclass
+class KartuKeuangan:
+    """Untung usaha periode — **angka utama** (aturan #9, keputusan "dua angka").
+
+    Omzet − (belanja + operasional) = laba bersih. Cakupan biaya 100% menurut
+    definisi; `prive` dikecualikan & dilaporкan terpisah. ⛔ Tidak memuat skor
+    komposit apa pun. `cakupan_tampil` = berapa persen omzet yang HPP-nya
+    terhitung — jujur soal seberapa dalam modal per-produk sudah tercatat.
+    """
+
+    periode_tampil: str
+    omzet_tampil: str
+    belanja_tampil: str
+    operasional_tampil: str
+    biaya_tampil: str
+    laba_bersih_tampil: str
+    untung: bool
+    ada_data: bool
+    cakupan_tampil: str  # "78%"
+    prive_tampil: str | None = None
+    rasio_prive_tampil: str | None = None
+    pos_biaya: list[BarisPos] = field(default_factory=list)
+    catatan: list[str] = field(default_factory=list)
+    teks_alt: str = ""
+    tipe: str = TipeKartu.keuangan.value
+
+    def __post_init__(self) -> None:
+        if not self.teks_alt:
+            if not self.ada_data:
+                self.teks_alt = f"{self.periode_tampil}: belum ada catatan."
+            else:
+                self.teks_alt = (
+                    f"{self.periode_tampil} — untung usaha {self.laba_bersih_tampil} "
+                    f"(omzet {self.omzet_tampil} − biaya {self.biaya_tampil})."
+                )
 
 
 @dataclass
@@ -183,6 +261,7 @@ Kartu = (
     | KartuKonfirmasi
     | KartuKlarifikasi
     | KartuUntung
+    | KartuKeuangan
     | KartuBelumDiketahui
 )
 
@@ -215,7 +294,10 @@ __all__ = [
     "BarisKonfirmasi",
     "KartuKonfirmasi",
     "KartuKlarifikasi",
+    "BarisUntung",
     "KartuUntung",
+    "BarisPos",
+    "KartuKeuangan",
     "KartuBelumDiketahui",
     "Kartu",
     "PesanKeluar",

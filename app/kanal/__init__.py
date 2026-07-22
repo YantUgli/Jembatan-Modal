@@ -12,7 +12,10 @@ atau string yang terikat ke satu kanal.
 from app.kanal.kontrak import (
     VERSI_KONTRAK,
     BarisKonfirmasi,
+    BarisPos,
+    BarisUntung,
     KartuBelumDiketahui,
+    KartuKeuangan,
     KartuKlarifikasi,
     KartuKonfirmasi,
     KartuNarasi,
@@ -23,7 +26,8 @@ from app.kanal.kontrak import (
     TipeKartu,
 )
 from app.kanal.orkestrator import (
-    kartu_untung_stub,
+    kartu_keuangan,
+    kartu_untung,
     koreksi_kategori,
     sapaan,
     tangani_pesan,
@@ -32,7 +36,10 @@ from app.kanal.orkestrator import (
 __all__ = [
     "VERSI_KONTRAK",
     "BarisKonfirmasi",
+    "BarisPos",
+    "BarisUntung",
     "KartuBelumDiketahui",
+    "KartuKeuangan",
     "KartuKlarifikasi",
     "KartuKonfirmasi",
     "KartuNarasi",
@@ -41,7 +48,8 @@ __all__ = [
     "PesanKeluar",
     "PilihanKategori",
     "TipeKartu",
-    "kartu_untung_stub",
+    "kartu_keuangan",
+    "kartu_untung",
     "koreksi_kategori",
     "sapaan",
     "tangani_pesan",

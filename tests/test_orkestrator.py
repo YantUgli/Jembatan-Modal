@@ -11,7 +11,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.kanal import kartu_untung_stub, koreksi_kategori, sapaan, tangani_pesan
+from app.kanal import koreksi_kategori, sapaan, tangani_pesan
 from app.kanal.kontrak import VERSI_KONTRAK, TipeKartu
 from app.llm.palsu import AdapterPalsu
 from app.models import Business, JenisTransaksi, Transaction
@@ -116,15 +116,6 @@ def test_koreksi_kategori_isolasi_tenant(session: Session, business: Business, t
     assert hasil.ke_dict()["kartu"][0]["tipe"] == TipeKartu.klarifikasi.value
     # Baris asli tak tersentuh.
     assert session.get(Transaction, tid).dibatalkan_pada is None
-
-
-def test_kartu_untung_selalu_stub_tanpa_angka():
-    d = kartu_untung_stub().ke_dict()
-    kartu = d["kartu"][0]
-    assert kartu["tipe"] == TipeKartu.untung.value
-    assert kartu["status"] == "belum_tersambung"
-    # Tak ada field angka yang bocor.
-    assert "nominal" not in kartu and "untung" not in kartu
 
 
 def test_sapaan_dari_data_usaha(session: Session, business: Business):

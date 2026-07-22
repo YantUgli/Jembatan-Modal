@@ -19,6 +19,9 @@ from sqlalchemy.orm import Session
 
 from app.kanal.kontrak import (
     BarisKonfirmasi,
+    BarisPos,
+    BarisUntung,
+    KartuKeuangan,
     KartuKlarifikasi,
     KartuKonfirmasi,
     KartuSapaan,
@@ -29,15 +32,24 @@ from app.kanal.kontrak import (
 from app.llm.kontrak import AdapterLLM
 from app.llm.skema import AksiKoreksi, Koreksi
 from app.models import Business, JenisTransaksi, Transaction
-from app.services.angka import _dec, _uang, rupiah
+from app.services.angka import _dec, _rapikan, _uang, rupiah
 from app.services.catat import terapkan_koreksi
+from app.services.hpp import (
+    HasilHpp,
+    KonteksHarga,
+    StatusHpp,
+    cakupan_hpp,
+    hitung_hpp_semua,
+)
+from app.services.laba import hitung_laba_periode
 from app.tools import Klarifikasi, Tercatat, catat_transaksi
 
 __all__ = [
     "tangani_pesan",
     "koreksi_kategori",
     "sapaan",
-    "kartu_untung_stub",
+    "kartu_untung",
+    "kartu_keuangan",
 ]
 
 # Badge jenis pada kartu (bahasa warung, bukan istilah akuntansi).
@@ -150,24 +162,189 @@ def sapaan(business: Business, salam: str = "Selamat datang") -> PesanKeluar:
     )
 
 
-def kartu_untung_stub() -> PesanKeluar:
-    """Kartu untung/HPP sebelum tool HPP di-wire.
+# Terjemahan status HPP → satu kalimat bahasa warung (bukan istilah teknis).
+# Dipakai saat modal per porsi belum bisa dihitung — aturan #2: mengaku, bukan
+# mengarang angka nol.
+_SEBAB_HPP = {
+    StatusHpp.belum_ada_resep: "resepnya belum diatur",
+    StatusHpp.harga_tidak_lengkap: "ada bahan yang harganya belum tercatat",
+    StatusHpp.belum_ada_harga_beli: "belum ada catatan belanja barang ini",
+    StatusHpp.satuan_tidak_cocok: "satuan takaran resep beda dengan satuan harganya",
+    StatusHpp.subproduk_tidak_lengkap: "ada bahan setengah jadi yang belum lengkap",
+    StatusHpp.resep_melingkar: "resepnya berputar memakai dirinya sendiri",
+    StatusHpp.tipe_belum_didukung: "ada komponen biaya yang belum didukung",
+}
 
-    Mengaku "belum tersambung" alih-alih mengarang angka (aturan #1/#2). Service
-    HPP (`app/services/hpp.py`) sudah matang; menyambungkannya adalah slice
-    berikutnya, bukan sekarang.
+
+def _persen(d) -> str:
+    """0..100 (Decimal) → '78%' / '78.5%'. Bukan uang, jadi bukan rupiah()."""
+    return f"{_rapikan(_dec(d))}%"
+
+
+def _baris_untung(h: HasilHpp) -> BarisUntung:
+    """`HasilHpp` service → baris kartu. Angka apa adanya; None tetap None.
+
+    ⛔ Tidak ada aritmatika di sini (aturan #1) — semua angka sudah dihitung
+    service; kita hanya memformat & memilih kata.
     """
+    if h.status is StatusHpp.lengkap:
+        return BarisUntung(
+            nama=h.nama,
+            jenis=h.jenis,
+            diketahui=True,
+            hpp_tampil=rupiah(h.hpp_per_unit) if h.hpp_per_unit is not None else None,
+            satuan_hpp=h.satuan_hpp,
+            harga_jual_tampil=(
+                rupiah(h.harga_jual) if h.harga_jual is not None else None
+            ),
+            laba_kotor_tampil=(
+                rupiah(h.laba_kotor_per_unit)
+                if h.laba_kotor_per_unit is not None
+                else None
+            ),
+        )
+
+    # Belum bisa dihitung: apa yang kurang diambil dari daftar konkret service
+    # (nama bahan / bentrokan satuan), bukan dikarang.
+    yang_kurang = list(h.bahan_kurang_harga) + list(h.satuan_bertabrakan)
+    return BarisUntung(
+        nama=h.nama,
+        jenis=h.jenis,
+        diketahui=False,
+        harga_jual_tampil=rupiah(h.harga_jual) if h.harga_jual is not None else None,
+        sebab=_SEBAB_HPP.get(h.status, "datanya belum lengkap"),
+        yang_kurang=yang_kurang,
+    )
+
+
+def kartu_untung(
+    session: Session,
+    business_id: int,
+    mulai: date,
+    selesai: date,
+    konteks: KonteksHarga | None = None,
+) -> PesanKeluar:
+    """Laba kotor **dari bahan** per porsi, per produk (Pilar 4).
+
+    ⛔ Aturan #9: ini BUKAN untung usaha — itu angka lain (`kartu_keuangan`), dan
+    keduanya tidak pernah dilebur. `cakupan` (aturan #2) menyertakan berapa persen
+    penjualan yang modalnya sudah terhitung. Angka datang dari service HPP; kanal
+    tidak berhitung.
+    """
+    hasil = hitung_hpp_semua(session, business_id, konteks)
+    cak = cakupan_hpp(session, business_id, mulai, selesai)
+    baris = [_baris_untung(h) for h in hasil]
+
+    diketahui = sum(1 for b in baris if b.diketahui)
+    if not baris:
+        status = "belum_diketahui"
+    elif diketahui == len(baris):
+        status = "lengkap"
+    elif diketahui == 0:
+        status = "belum_diketahui"
+    else:
+        status = "sebagian"
+
+    if not baris:
+        pesan = (
+            "Belum ada produk yang tercatat, jadi modal per porsi belum bisa "
+            "dihitung. Begitu Ibu catat penjualan dengan nama barangnya, saya "
+            "mulai hitung untung kotornya."
+        )
+    else:
+        pesan = (
+            "Ini untung kotor dari bahan per porsi — belum dikurangi biaya lain "
+            "seperti gas, listrik, dan tenaga. Angka untung yang sudah dikurangi "
+            "semua biaya ada di laporan singkat."
+        )
+        if cak.omzet_total > 0:
+            pesan += f" Modal bahan sudah terhitung untuk {_persen(cak.persen)} penjualan."
+
     return PesanKeluar(
         [
             KartuUntung(
-                pesan=(
-                    "Hitung untung per porsi belum saya sambungkan di sini. Modal bahannya "
-                    "sudah dihitung mesin secara pasti — saya tampilkan begitu jalurnya siap, "
-                    "supaya angkanya benar, bukan kira-kira."
-                ),
+                pesan=pesan,
+                produk=baris,
+                cakupan_tampil=_persen(cak.persen) if cak.omzet_total > 0 else "",
+                status=status,
             )
         ]
     )
+
+
+def kartu_keuangan(
+    session: Session, business_id: int, mulai: date, selesai: date
+) -> PesanKeluar:
+    """Untung usaha periode — **angka utama** (aturan #9, keputusan "dua angka").
+
+    Omzet − (belanja + operasional) = laba bersih; prive dikecualikan. Angka dari
+    `hitung_laba_periode`; cakupan HPP disertakan (aturan #2). ⛔ Tanpa skor
+    komposit. Catatan ditulis ulang di bahasa warung (bukan istilah "basis kas").
+    """
+    laba = hitung_laba_periode(session, business_id, mulai, selesai)
+    cak = cakupan_hpp(session, business_id, mulai, selesai)
+
+    ada_data = not (laba.omzet == 0 and laba.biaya_total == 0 and laba.prive == 0)
+
+    catatan: list[str] = []
+    if not ada_data:
+        catatan.append(f"Belum ada catatan untuk {_periode(mulai, selesai)}.")
+    else:
+        # Terjemahan "basis kas" ke bahasa warung — jangan pakai jargonnya.
+        catatan.append(
+            "Hitungan ini apa adanya dari catatan: kalau ada belanja yang barangnya "
+            "baru laku bulan depan, tetap ikut kehitung bulan ini."
+        )
+    if laba.prive > 0:
+        catatan.append(
+            "Uang yang Ibu ambil untuk keperluan pribadi tidak dihitung sebagai "
+            "biaya usaha — dicatat terpisah."
+        )
+    if laba.laba_bersih < 0:
+        catatan.append("Bulan ini pengeluaran lebih besar daripada pemasukan.")
+
+    return PesanKeluar(
+        [
+            KartuKeuangan(
+                periode_tampil=_periode(mulai, selesai),
+                omzet_tampil=rupiah(laba.omzet),
+                belanja_tampil=rupiah(laba.belanja),
+                operasional_tampil=rupiah(laba.operasional),
+                biaya_tampil=rupiah(laba.biaya_total),
+                laba_bersih_tampil=rupiah(laba.laba_bersih),
+                untung=laba.untung,
+                ada_data=ada_data,
+                cakupan_tampil=_persen(cak.persen) if cak.omzet_total > 0 else "",
+                prive_tampil=rupiah(laba.prive) if laba.prive > 0 else None,
+                rasio_prive_tampil=(
+                    _persen(laba.rasio_prive) if laba.rasio_prive is not None else None
+                ),
+                pos_biaya=[
+                    BarisPos(
+                        kategori=p.kategori,
+                        jenis=p.jenis,
+                        nominal_tampil=rupiah(p.nominal),
+                    )
+                    for p in laba.pos_biaya[:5]
+                ],
+                catatan=catatan,
+            )
+        ]
+    )
+
+
+_BULAN = ["", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
+          "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+
+
+def _periode(mulai: date, selesai: date) -> str:
+    """'1–21 Jul 2026', atau '18 Mei–21 Jul 2026' bila beda bulan."""
+    if mulai.year == selesai.year and mulai.month == selesai.month:
+        return f"{mulai.day}–{selesai.day} {_BULAN[selesai.month]} {selesai.year}"
+    kiri = f"{mulai.day} {_BULAN[mulai.month]}"
+    if mulai.year != selesai.year:
+        kiri += f" {mulai.year}"
+    return f"{kiri}–{selesai.day} {_BULAN[selesai.month]} {selesai.year}"
 
 
 # ── Pembangun kartu ──────────────────────────────────────────────────────────

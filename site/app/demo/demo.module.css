@@ -231,6 +231,7 @@
   line-height: 1.5;
   padding-top: 2px;
   overflow-wrap: break-word;
+  background: #fff;
 }
 .avatar {
   margin-top: 2px;
@@ -553,7 +554,6 @@
   align-items: center;
   gap: 10px;
   padding: 0 16px;
-  background: #fff;
 }
 .input {
   flex: 1;

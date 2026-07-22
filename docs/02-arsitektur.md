@@ -2,7 +2,7 @@
 
 ## 1. Gambaran Besar
 
-Pola intinya: **AI agent dengan tools**. Satu LLM menjadi "resepsionis" yang memahami maksud pengguna, lalu memanggil tool yang tepat. Semua logika bisnis dan kalkulasi angka hidup di tools (kode Python deterministik), bukan di LLM.
+Pola intinya: **AI agent dengan tools, tapi LLM tidak pernah memanggil tool secara langsung.** LLM hanya mengekstrak/mengklasifikasi bahasa pengguna jadi data terstruktur (lewat `ekstrak()`); orchestrator (kode Python) yang membaca hasil itu dan memutuskan tool mana yang dipanggil. Semua logika bisnis dan kalkulasi angka hidup di tools (kode Python deterministik), bukan di LLM.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -14,19 +14,20 @@ Pola intinya: **AI agent dengan tools**. Satu LLM menjadi "resepsionis" yang mem
 │  BACKEND — FastAPI                                               │
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │  AGENT ORCHESTRATOR                                        │ │
-│  │  LLM via adapter (function calling) + riwayat percakapan   │ │
-│  │  "memahami maksud → panggil tool → narasikan hasil"        │ │
+│  │  AGENT ORCHESTRATOR (kode Python — memilih tool, bukan LLM)│ │
+│  │  "ekstrak/klasifikasi → kode pilih tool → narasikan hasil" │ │
 │  │  ┌──────────────────────────────────────────────────────┐  │ │
-│  │  │ LLM ADAPTER — satu interface internal; provider      │  │ │
-│  │  │ (Gemini / Claude / Llama / dst.) tinggal ditukar     │  │ │
+│  │  │ LLM ADAPTER — dua verba tertutup, satu interface     │  │ │
+│  │  │ internal: ekstrak() & narasikan(). Provider (Gemini /│  │ │
+│  │  │ Claude / Llama / dst.) tinggal ditukar                │  │ │
 │  │  └──────────────────────────────────────────────────────┘  │ │
 │  └──────────────────────────┬─────────────────────────────────┘ │
 │                             │                                    │
 │  ┌──────────────────────────▼─────────────────────────────────┐ │
 │  │  TOOLS (dikelompokkan per pilar — lihat project brief §3)  │ │
 │  │                                                             │ │
-│  │  P1  catat_transaksi · koreksi_transaksi · tanya_keuangan   │ │
+│  │  P1  catat_transaksi · koreksi_transaksi · pilih_aksi ·      │ │
+│  │      tanya_untung · tanya_keuangan                           │ │
 │  │  P4  atur_resep · hitung_hpp · tanya_hpp      ← prioritas   │ │
 │  │  P2  impor_data · tinjau_impor · konfirmasi_impor           │ │
 │  │  P3  buat_laporan · hitung_skor_kesehatan ·                 │ │
@@ -57,7 +58,18 @@ Pola intinya: **AI agent dengan tools**. Satu LLM menjadi "resepsionis" yang mem
 
 1. **LLM tidak pernah berhitung.** Semua angka (total, laba, skor) dihitung service layer dari database. LLM hanya (a) mengekstrak data terstruktur dari bahasa natural, dan (b) menarasikan hasil kalkulasi. Ini mitigasi utama halusinasi.
 2. **Channel-agnostic.** Agent menerima/mengirim pesan dalam format internal seragam. UI web chat hanyalah salah satu adaptor; adaptor WhatsApp (Cloud API) tinggal dicolok tanpa mengubah inti.
-3. **Provider-agnostic.** Orchestrator memanggil LLM hanya lewat satu interface internal (`kirim_ke_llm(riwayat, tools) → teks | panggilan_tool`). Format request/response tiap vendor hidup di satu file adapter — ganti provider (mis. dari free tier satu vendor ke vendor lain) = ganti satu adapter, bukan menulis ulang inti. Semua penyedia besar (Gemini, Claude, OpenAI, Llama via Groq/Together, DeepSeek) mendukung pola function calling yang sama.
+3. **Provider-agnostic — sengaja tanpa function calling.** `AdapterLLM` hanya
+   dua verba: `ekstrak(instruksi, teks, skema) → data | Gagal` (bahasa natural
+   → data terstruktur, termasuk klasifikasi ke enum tertutup) dan
+   `narasikan(instruksi, fakta) → teks` (angka yang sudah dihitung service →
+   kalimat). **Bukan** karena provider besar tak mendukung tool-calling/function
+   calling — justru karena format tool-calling, loop agentik, dan streaming
+   adalah tempat vendor paling berbeda satu sama lain, dan produk ini tidak
+   pernah membutuhkan LLM memutuskan langkah apa pun: orchestrator (kode Python)
+   selalu yang membaca hasil `ekstrak()`/klasifikasi dan memilih tool mana yang
+   dipanggil — persis pola router intent bahasa-bebas (`pilih_aksi`, lihat
+   [keputusan.md](keputusan.md) 2026-07-22). Ganti provider = tiru dua
+   verba ini di satu file adapter baru, tidak lebih.
 4. **Tools = kontrak yang jelas.** Tiap tool punya skema input/output tegas, sehingga perilaku agent bisa diuji per-tool — dan suite ujinya sekaligus menjadi benchmark pemilihan provider (lihat §7).
 
 ## 2. Komponen & Alasan Pemilihan
@@ -65,7 +77,7 @@ Pola intinya: **AI agent dengan tools**. Satu LLM menjadi "resepsionis" yang mem
 | Komponen | Pilihan | Alasan |
 |----------|---------|--------|
 | Backend framework | **FastAPI** (Python) | Async cocok untuk panggilan LLM API; ekosistem Python kuat untuk PDF & data; sudah dikuasai developer |
-| LLM | **Ditentukan lewat benchmark** — kandidat: Gemini (free tier AI Studio), Claude, Llama (Groq/Together), DeepSeek | Diakses lewat LLM adapter (provider-agnostic). Kriteria pemilihan: (1) akurasi ekstraksi Bahasa Indonesia informal pada suite uji §7, (2) keandalan function calling, (3) biaya/kuota gratis. Kuota & harga diverifikasi ke halaman resmi provider saat memutuskan |
+| LLM | **Ditentukan lewat benchmark** — kandidat: Gemini (free tier AI Studio), Claude, Llama (Groq/Together), DeepSeek | Diakses lewat LLM adapter (provider-agnostic). Kriteria pemilihan: (1) akurasi ekstraksi Bahasa Indonesia informal pada suite uji §7, (2) kepatuhan pada structured output/skema JSON untuk `ekstrak()` (bukan function calling — lihat §1 prinsip 3), (3) biaya/kuota gratis. Kuota & harga diverifikasi ke halaman resmi provider saat memutuskan |
 | Database | **SQLite** (awal) → **PostgreSQL** (produksi) | SQLite tanpa setup saat pengembangan awal; skema dirancang agar migrasi ke Postgres mulus (via SQLAlchemy) |
 | Parser impor (P2) | **Vision model** (foto/screenshot) + parser teks/CSV, di balik satu interface `parse(berkas) → list[BarisDraft]` | Menambah sumber baru = menambah adaptor, tanpa menyentuh inti (§3b). Vision lewat LLM adapter yang sama agar provider tetap bisa ditukar |
 | ORM & migrasi | **SQLAlchemy + Alembic** | Standar de-facto, mendukung dua database di atas |

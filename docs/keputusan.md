@@ -5,7 +5,55 @@
 
 ---
 
-## 2026-07-22 — Situs portofolio statis hidup di `/site`, terpisah dari aplikasi
+## 2026-07-22 — `/site` di-port ke Next.js; source of truth desain pindah ke repo (men-supersede entri "tidak-unbundle" hari yang sama)
+
+- **Konteks:** entri **"Situs portofolio statis hidup di `/site`"** (di bawah,
+  tanggal sama) memarkir landing + demo sebagai bundle export Claude Design yang
+  tidak di-unbundle, dengan konsekuensi source of truth tetap di Claude Design
+  dan koreksi copy wajib disinkronkan balik ke sana. Bundle itu ±1 MB, buram
+  (markup sebagai string JSON, React + font ter-embed), tak bisa di-review/di-diff
+  dengan wajar, dan setiap perbaikan kecil menuntut re-export manual.
+
+- **Keputusan:** landing + demo **diimplementasikan ulang sebagai aplikasi
+  Next.js** (App Router, TypeScript, `output: 'export'` → HTML statis), rute `/`
+  (landing) dan `/demo`. Bundle export dijadikan **referensi desain** lalu
+  **dihapus dari tree**. Ini **men-supersede** entri "tidak-unbundle" tsb —
+  khususnya butir 1 (*source of truth di Claude Design*) dan butir 3 (*tidak
+  di-unbundle*):
+  1. **Source of truth desain kini = kode di `/site` repo ini**, bukan Claude
+     Design. Design token dipusatkan sebagai CSS variable
+     ([site/app/globals.css](../site/app/globals.css)); font lewat
+     `next/font/google` (Plus Jakarta Sans + IBM Plex Mono, di-self-host saat
+     build); styling CSS Modules; dependency minimal (hanya Next/React).
+  2. Copy yang dipakai = **versi ter-koreksi** dari bundle (18 berkas uji; kartu
+     untung per produk sudah tersambung ke chat; hanya wawancara resep yang
+     belum) — bukan export asli Claude Design.
+  3. Animasi timeline hero & seluruh perilaku demo ter-skrip di-port setia
+     (tombol saran → kartu hardcoded, chip kategori bisa dikoreksi lewat state
+     lokal, kalimat bebas dijawab jujur "belum diproses"); **nol panggilan API**,
+     menghormati `prefers-reduced-motion`, dan tetap utuh tanpa JavaScript.
+
+- **Alasan:** kode Next.js bisa di-review, di-diff, di-lint, dan di-type-check —
+  hilang sudah gumpalan ~1 MB yang buram. Static export menjaga deploy tetap
+  tanpa server. Kesetaraan visual dengan bundle diverifikasi lewat screenshot
+  berdampingan (landing + demo) sebelum bundle dihapus. Logika keamanan
+  iframe/postMessage yang jadi alasan "tidak di-unbundle" tidak lagi relevan:
+  runtime bundler itu ikut hilang bersama bundle-nya.
+
+- **Konsekuensi:** source-of-truth copy & markup **pindah ke repo ini**, sehingga
+  **sinkronisasi balik ke Claude Design (temuan/konsekuensi sesi sebelumnya) tidak
+  lagi diperlukan** — koreksi cukup diedit di kode. `site/index.html` &
+  `site/demo.html` dihapus; `site/README.md` ditulis ulang (cara dev/build/export
+  + catatan sejarah); `site/.gitignore` menutup `node_modules`/`.next`/`out`.
+  Toolchain JS di `site/` sengaja terpisah dari tooling Python di root (tidak
+  menyentuh pipenv/pytest/ruff/alembic). Meta verifikasi Dicoding
+  (`dicoding:email`) disematkan lewat `metadata.other` di tiap halaman → muncul di
+  HTML `out/` statis. Tautan putus `[../keputusan.md]` pada perubahan uncommitted
+  di [02-arsitektur.md](02-arsitektur.md) §1 dibetulkan jadi `[keputusan.md]`;
+  kembarannya di baris committed (§ "Standalone") sengaja **tidak** disentuh dan
+  dilaporkan terpisah.
+
+
 
 - **Konteks:** dua artefak Claude Design selesai — landing page portofolio dan
   demo chat ter-skrip. Keduanya bundle self-contained (runtime unpacker, React

@@ -5,6 +5,43 @@
 
 ---
 
+## 2026-07-22 — Situs portofolio statis hidup di `/site`, terpisah dari aplikasi
+
+- **Konteks:** dua artefak Claude Design selesai — landing page portofolio dan
+  demo chat ter-skrip. Keduanya bundle self-contained (runtime unpacker, React
+  ter-embed, font ter-base64; ±500 KB/berkas, tanpa panggilan jaringan) dan
+  butuh tempat di repo kode tanpa tercampur backend (`app/`) atau UI produk
+  (`web/`).
+
+- **Keputusan:** keduanya hidup di **`/site`** (`index.html` = landing,
+  `demo.html` = demo) sebagai **artefak statis portofolio**.
+  1. **Source of truth desain tetap di Claude Design** — berkas di repo adalah
+     artefak build; edit kecil boleh langsung di template bundle, perubahan
+     besar lewat Claude Design + re-export ([site/README.md](../site/README.md)
+     mendaftar penyimpangan lokal yang wajib diterapkan ulang).
+  2. **Demo ter-skrip ≠ UI chat produk** — bukan cikal bakal Tahap 4d
+     ([04-rencana-kerja.md](04-rencana-kerja.md)); UI produk tetap digarap di
+     `web/`.
+  3. Bundle **tidak di-unbundle** (font/React tidak dipisah) — runtime bundler
+     memuat logika keamanan iframe/postMessage yang tidak boleh dirusak; ±1 MB
+     sekali commit dinilai wajar.
+  4. Copy landing dikoreksi saat integrasi agar jujur terhadap kode per tanggal
+     ini: 18 (bukan 17) berkas pengujian, dan kartu untung per produk **sudah**
+     tersambung ke chat (`tanya_untung` → `kartu_untung()` →
+     `hitung_hpp_semua()`) — yang belum tersambung adalah wawancara resep.
+
+- **Alasan:** folder terpisah membuat batas tegas dengan aplikasi (tidak
+  di-serve FastAPI, tidak ikut artefak deploy backend) dan `index.html` +
+  `demo.html` flat paling ramah static hosting maupun dibuka langsung dari
+  berkas. Koreksi copy mengikuti aturan produk sendiri: klaim yang tidak sesuai
+  kode tidak boleh dipajang.
+
+- **Konsekuensi:** `/site` di-deploy terpisah (unggah folder apa adanya);
+  perbaikan copy perlu disinkronkan balik ke Claude Design agar export
+  berikutnya tidak menghidupkan lagi klaim usang; label status di landing
+  menjadi ikut kedaluwarsa tiap kali fitur baru menyeberang dari "rencana" ke
+  "teruji" — perlu dicek setiap re-export.
+
 ## 2026-07-22 — Router intent bahasa-bebas: pakai ulang `ekstrak()`, bukan verba tool-calling baru
 
 - **Konteks:** `tanya_untung`/`tanya_keuangan` hanya bisa dipicu chip terstruktur;

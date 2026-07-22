@@ -5,11 +5,15 @@
 Backend + UI chat JembatanModal: asisten AI yang mengubah catatan keuangan harian
 UMKM menjadi kejelasan untung-rugi yang jujur dan kesiapan mengakses modal formal.
 
-**Perencanaan hidup di repo terpisah** — baca sebelum mengubah arsitektur:
-- Project brief (scope & non-goals) — ⟨tautan/path ke `00-project-brief.md`⟩
-- Arsitektur teknis — ⟨tautan/path ke `02-arsitektur.md`⟩
-- Rencana kerja — ⟨tautan/path ke `04-rencana-kerja.md`⟩
-- Log keputusan — ⟨tautan/path ke `keputusan.md`⟩
+**Perencanaan hidup di `docs/` repo ini** — baca sebelum mengubah arsitektur:
+- Project brief (scope & non-goals) — [`docs/00-project-brief.md`](docs/00-project-brief.md)
+- Arsitektur teknis — [`docs/02-arsitektur.md`](docs/02-arsitektur.md)
+- Rencana kerja — [`docs/04-rencana-kerja.md`](docs/04-rencana-kerja.md)
+- Log keputusan — [`docs/keputusan.md`](docs/keputusan.md)
+
+> `docs/` adalah **satu-satunya salinan hidup**. Salinan lama di repo
+> `jembatan-modal` terpisah berhenti 2026-07-17 dan **usang** — jangan menulis
+> ke sana.
 
 Produk ini **standalone**: punya datanya sendiri, tidak membaca database produk
 lain. Platform lain (majoo, BukuWarung, WargaFinance) masuk **hanya** lewat jalur
@@ -150,5 +154,5 @@ cd web && npm install && npm run dev                # UI mobile http://localhost
   mencakupnya. Kalau belum, **bahas dulu** — jangan improvisasi skema.
 - Kalau ada pertentangan antara dokumen perencanaan dan kode, **sebutkan**;
   jangan diam-diam memilih salah satu.
-- Keputusan strategis dicatat balik ke `keputusan.md` di repo perencanaan,
+- Keputusan strategis dicatat balik ke [`docs/keputusan.md`](docs/keputusan.md),
   dengan alasan + tanggal.

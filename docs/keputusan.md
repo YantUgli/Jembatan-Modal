@@ -5,7 +5,33 @@
 
 ---
 
-## 2026-07-22 — `/site` di-port ke Next.js; source of truth desain pindah ke repo (men-supersede entri "tidak-unbundle" hari yang sama)
+## 2026-07-22 — `docs/` repo kode jadi rumah resmi dokumen perencanaan
+
+- **Konteks:** CLAUDE.md menyatakan "perencanaan hidup di repo terpisah" dengan
+  pointer placeholder `⟨tautan/path⟩`, padahal salinan **hidup** (brief,
+  arsitektur, rencana kerja, dan `keputusan.md` dengan entri terbaru) sudah lama
+  menumpuk di `docs/` repo kode. Salinan di repo `jembatan-modal` terpisah
+  berhenti 2026-07-17 dan basi. Kontradiksi ini berulang bikin bingung "menulis
+  keputusan ke mana".
+
+- **Keputusan:** `docs/` di repo kode adalah **satu-satunya salinan hidup** dan
+  rumah resmi dokumen perencanaan. CLAUDE.md diperbarui: pointer placeholder
+  diganti path `docs/…` nyata, framing "repo terpisah" dibuang, dan aturan
+  "keputusan strategis dicatat ke `keputusan.md`" menunjuk eksplisit ke
+  `docs/keputusan.md`. Salinan lama di repo terpisah ditandai usang (jangan
+  ditulis).
+
+- **Alasan:** satu sumber kebenaran yang cocok dengan kenyataan kerja; menutup
+  celah drift/basi yang sudah dua kali menggigit. Memindahkan dokumen ke repo
+  terpisah (opsi lain) menghormati niat dua-repo awal tapi menuntut sinkronisasi
+  lintas-repo manual yang justru sumber masalahnya.
+
+- **Konsekuensi:** kontributor menulis keputusan & merevisi perencanaan langsung
+  di `docs/`. Repo `jembatan-modal` terpisah tidak lagi otoritatif untuk
+  perencanaan; kalau mau, isinya bisa dibersihkan/di-arsip terpisah (di luar
+  lingkup perubahan ini).
+
+
 
 - **Konteks:** entri **"Situs portofolio statis hidup di `/site`"** (di bawah,
   tanggal sama) memarkir landing + demo sebagai bundle export Claude Design yang

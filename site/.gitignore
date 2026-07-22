@@ -1,0 +1,18 @@
+# Artefak & dependensi toolchain JS — dipisah dari tooling Python di root repo.
+/node_modules
+/.next
+/out
+/build
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Env lokal
+.env*.local
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts

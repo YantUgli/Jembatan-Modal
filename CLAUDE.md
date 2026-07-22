@@ -138,6 +138,9 @@ cd web && npm install && npm run dev                # UI mobile http://localhost
 - **Konfirmasi pencatatan dirender dari template kode**, bukan panggilan LLM kedua
   (alasan biaya — ini aksi bervolume tertinggi).
 - Test ditulis **bersama** fiturnya, bukan ditumpuk di akhir.
+- **Pesan commit selalu dalam Bahasa Inggris**, walau kode/domain pakai Bahasa
+  Indonesia — konvensi repo Git standar. **Jangan pernah menyertakan trailer
+  `Co-Authored-By: Claude ...`** di commit manapun di repo ini.
 
 ## Cara kerja yang diharapkan
 

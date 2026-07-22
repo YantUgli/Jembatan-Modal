@@ -222,19 +222,24 @@
 .narasi {
   display: flex;
   gap: 9px;
-  align-items: flex-start;
+  align-items: flex-end;
 }
 .narasiText {
   max-width: 82%;
+  background: #fff;
+  border: 1px solid rgba(var(--ink-rgb), 0.07);
+  color: var(--ink);
   font-size: 15.5px;
   font-weight: 500;
   line-height: 1.5;
-  padding-top: 2px;
+  padding: 12px 15px;
+  border-radius: 18px 18px 18px 5px;
+  box-shadow: 0 1px 6px rgba(var(--ink-rgb), 0.04);
   overflow-wrap: break-word;
-  background: #fff;
 }
 .avatar {
-  margin-top: 2px;
+  flex: none;
+  margin-bottom: 2px;
 }
 
 .typing {

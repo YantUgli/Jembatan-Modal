@@ -1,0 +1,137 @@
+/*
+ * Design token JembatanModal — dipusatkan di sini sebagai satu-satunya sumber
+ * warna, tipografi, radius, dan bayangan. Diambil dari export Claude Design.
+ * Warna utama: hijau #2f7a5b. Aksen: amber #c97b2c.
+ */
+:root {
+  /* Palet dasar */
+  --bg: #efeae1;
+  --ink: #2a2622;
+  --green: #2f7a5b;
+  --green-dark: #245f47;
+  --green-light: #9fd4bc;
+  --amber: #c97b2c;
+  --amber-dark: #a2621f;
+  --amber-darker: #8a5417;
+  --amber-accent: #d99b55;
+
+  /* Permukaan */
+  --card: #ffffff;
+  --card-warm: #faf7f2;
+  --card-warmer: #fffcf6;
+  --panel: #f7f3ec;
+  --chip: #f1ece3;
+  --bubble: #eae3d6;
+  --cream: #f3efe7;
+
+  /* RGB untuk menyusun rgba() dengan alpha */
+  --ink-rgb: 42, 38, 34;
+  --green-rgb: 47, 122, 91;
+  --amber-rgb: 201, 123, 44;
+  --cream-rgb: 243, 239, 231;
+  --white-rgb: 255, 255, 255;
+
+  /* Radius */
+  --r-sm: 12px;
+  --r-md: 16px;
+  --r-lg: 20px;
+  --r-xl: 26px;
+  --r-pill: 999px;
+
+  /* Bayangan */
+  --shadow-card: 0 3px 16px rgba(var(--ink-rgb), 0.06);
+  --shadow-cta: 0 6px 16px rgba(var(--green-rgb), 0.28);
+
+  /* Tata letak */
+  --maxw: 1120px;
+  --gutter: 28px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--green);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--green-dark);
+  text-decoration: underline;
+}
+
+input {
+  font-family: inherit;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+@keyframes cardIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 0.9;
+  }
+}
+
+/* Pengguna yang meminta gerak dikurangi: matikan animasi masuk & titik ketik. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

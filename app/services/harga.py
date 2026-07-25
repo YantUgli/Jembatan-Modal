@@ -131,6 +131,45 @@ def harga_jual_berlaku(
     )
 
 
+def catat_harga_jual_dari_penjualan(
+    session: Session,
+    product_id: int,
+    business_id: int,
+    harga_unit: Decimal,
+    tanggal: date,
+) -> ProductPrice | None:
+    """Tangkap harga jual dari sebuah penjualan → `product_prices` (append-only).
+
+    HPP membaca **modal** dari pembelian, tapi **harga jual** dari `product_prices`
+    — yang jalur chat tak pernah isi. Tanpa ini, loop reseller hanya menampilkan
+    modal, bukan untung. Harga satuan (`harga_unit = nominal ÷ qty`) dihitung
+    service pemanggil, deterministik — LLM tidak dilibatkan (aturan #1).
+
+    **Dedup** (meniru `hpp.simpan_snapshot_hpp`): hanya menulis baris baru bila
+    harga umum yang berlaku pada `tanggal` memang berbeda. Menulis satu baris tiap
+    penjualan hanya mengubur sinyal perubahan harga; `harga_jual_berlaku` sudah
+    memilih yang terbaru, jadi baris identik tak menambah apa pun.
+
+    `kanal`/`grade`/`min_qty` = NULL (umum): satu kalimat jual tak mengungkap
+    kanal. Berlaku untuk semua `jenis` produk — harga jual valid bagi reseller
+    maupun produksi, jadi bukan kode khusus-reseller.
+    """
+    nilai = _uang(harga_unit)
+    umum = harga_jual_berlaku(session, product_id, business_id, tanggal=tanggal)
+    if umum is not None and umum.umum and umum.harga == nilai:
+        return None
+
+    pp = ProductPrice(
+        product_id=product_id,
+        harga=nilai,
+        berlaku_dari=tanggal,
+        catatan="dari catatan penjualan",
+    )
+    session.add(pp)
+    session.flush()
+    return pp
+
+
 def daftar_harga(
     session: Session, product_id: int, business_id: int, *, tanggal: date | None = None
 ) -> list[HargaTerpilih]:

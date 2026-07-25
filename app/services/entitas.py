@@ -21,15 +21,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import (
+    CostItem,
     JenisProduk,
     JenisTransaksi,
     Product,
+    TipeKomponen,
     Transaction,
 )
 
 __all__ = [
     "adopsi_pembelian_yatim",
+    "cari_cost_item",
     "cari_produk",
+    "resolusi_cost_item",
     "resolusi_produk",
 ]
 
@@ -81,6 +85,51 @@ def resolusi_produk(session: Session, business_id: int, nama: str) -> tuple[Prod
     session.add(produk)
     session.flush()
     return produk, True
+
+
+def cari_cost_item(session: Session, business_id: int, nama: str) -> CostItem | None:
+    """Bahan (`CostItem`) milik usaha ini yang namanya cocok — find-only.
+
+    Sejajar `cari_produk`: difilter `business_id` (aturan #6), pencocokan nama
+    lewat `_normalisasi_nama`, `id` terkecil menang bila lebih dari satu.
+    """
+    target = _normalisasi_nama(nama)
+    if target is None:
+        return None
+    kandidat = session.scalars(
+        select(CostItem)
+        .where(CostItem.business_id == business_id)
+        .order_by(CostItem.id)
+    ).all()
+    for ci in kandidat:
+        if _normalisasi_nama(ci.nama) == target:
+            return ci
+    return None
+
+
+def resolusi_cost_item(
+    session: Session, business_id: int, nama: str, satuan: str | None = None
+) -> tuple[CostItem, bool]:
+    """Find-or-create bahan. Kembalikan `(cost_item, dibuat_baru)`.
+
+    ⛔ Selalu `tipe=material` (aturan #7): `labor_time`/`overhead` adalah slot,
+    tak pernah dibuat di sini. Penciptaannya dipicu resep (pengguna menyatakan
+    "ini bahannya") — bukan ditebak dari belanja, yang akan salah mengklaim
+    barang dagangan reseller sebagai bahan.
+    """
+    ada = cari_cost_item(session, business_id, nama)
+    if ada is not None:
+        return ada, False
+
+    ci = CostItem(
+        business_id=business_id,
+        tipe=TipeKomponen.material,
+        nama=nama.strip(),
+        satuan_baku=satuan,
+    )
+    session.add(ci)
+    session.flush()
+    return ci, True
 
 
 def adopsi_pembelian_yatim(

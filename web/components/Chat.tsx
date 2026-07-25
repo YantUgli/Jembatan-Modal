@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ambilSesi, kirimChat } from "@/lib/api";
-import type { Kartu, KartuSapaan, PesanKeluar } from "@/lib/kontrak";
+import type { Kartu, KartuSapaan, KonteksTunggu, PesanKeluar } from "@/lib/kontrak";
 import { Mark } from "./Brand";
 import {
   BelumDiketahuiView,
@@ -10,8 +10,24 @@ import {
   KlarifikasiView,
   KonfirmasiView,
   NarasiView,
+  ResepView,
   UntungView,
 } from "./Cards";
+
+// Setelah tiap balasan: bila kartu terakhir adalah resep yang menunggu harga
+// bahan, bawa token itu ke pesan berikutnya (tanya-jawab multi-turn). Kartu
+// lain → tak ada yang ditunggu (pengguna ganti topik → bersihkan).
+function menungguDari(kartu: Kartu[]): KonteksTunggu | null {
+  for (let i = kartu.length - 1; i >= 0; i--) {
+    const k = kartu[i];
+    if (k.tipe === "resep") {
+      return k.menunggu
+        ? { jenis: "harga_bahan", product_id: k.menunggu.product_id, bahan: k.menunggu.bahan }
+        : null;
+    }
+  }
+  return null;
+}
 
 type Item =
   | { id: number; kind: "user"; teks: string }
@@ -36,6 +52,7 @@ export default function Chat() {
   const [typing, setTyping] = useState(false);
   const [sibuk, setSibuk] = useState(false);
   const [draft, setDraft] = useState("");
+  const [menunggu, setMenunggu] = useState<KonteksTunggu | null>(null);
   const idRef = useRef(0);
   const threadRef = useRef<HTMLDivElement>(null);
 
@@ -87,8 +104,9 @@ export default function Chat() {
       setSibuk(true);
       setTyping(true);
       try {
-        const p = await kirimChat({ teks: t });
+        const p = await kirimChat(menunggu ? { teks: t, konteks: menunggu } : { teks: t });
         pushKartu(p.kartu);
+        setMenunggu(menungguDari(p.kartu));
       } catch (e) {
         errorTenang(
           e instanceof Error && e.message
@@ -100,13 +118,14 @@ export default function Chat() {
         setSibuk(false);
       }
     },
-    [sibuk, pushKartu, errorTenang],
+    [sibuk, menunggu, pushKartu, errorTenang],
   );
 
   // Aksi query (tombol, bukan NL): dorong bubble pengguna lalu render kartunya.
   const tanyaAksi = useCallback(
     async (aksi: "tanya_untung" | "tanya_keuangan", label: string) => {
       if (sibuk) return;
+      setMenunggu(null); // aksi tombol = ganti topik, bukan jawaban harga
       setItems((prev) => [...prev, { id: nextId(), kind: "user", teks: label }]);
       setSibuk(true);
       setTyping(true);
@@ -268,6 +287,8 @@ function KartuView({
       return <UntungView kartu={kartu} />;
     case "keuangan":
       return <KeuanganView kartu={kartu} />;
+    case "resep":
+      return <ResepView kartu={kartu} />;
     default:
       return null;
   }

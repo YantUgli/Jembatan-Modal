@@ -29,6 +29,7 @@ from app.models import (
     CostItemPrice,
     JenisProduk,
     JenisTransaksi,
+    Product,
     Recipe,
     RecipeItem,
     SumberHarga,
@@ -42,6 +43,7 @@ __all__ = [
     "HasilAturResep",
     "atur_resep",
     "catat_harga_bahan",
+    "rangkai_hasil",
 ]
 
 
@@ -207,6 +209,36 @@ def atur_resep(
         product_id=produk.id,
         nama=produk.nama,
         recipe_id=recipe.id,
+        hpp=hasil,
+        bahan_perlu_harga=list(hasil.bahan_kurang_harga),
+        konfirmasi=_konfirmasi(hasil),
+    )
+
+
+def rangkai_hasil(
+    session: Session, business_id: int, product_id: int
+) -> HasilAturResep | None:
+    """Bungkus ulang HPP produk jadi `HasilAturResep` (tanpa mengubah resep).
+
+    Dipakai setelah harga bahan menyusul (mis. jawaban tanya-jawab) untuk
+    menghitung ulang modal per porsi & merangkai konfirmasi yang sama. Tenant
+    diperiksa di query (aturan #6): produk bukan milik usaha ini → `None`.
+    """
+    produk = session.scalars(
+        select(Product).where(
+            Product.id == product_id, Product.business_id == business_id
+        )
+    ).first()
+    if produk is None:
+        return None
+    recipe = session.scalars(
+        select(Recipe).where(Recipe.product_id == produk.id)
+    ).first()
+    hasil = hitung_hpp_produk(session, produk.id, business_id)
+    return HasilAturResep(
+        product_id=produk.id,
+        nama=produk.nama,
+        recipe_id=recipe.id if recipe is not None else 0,
         hpp=hasil,
         bahan_perlu_harga=list(hasil.bahan_kurang_harga),
         konfirmasi=_konfirmasi(hasil),

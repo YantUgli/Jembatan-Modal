@@ -2,7 +2,7 @@
 // Satu-satunya sumber kebenaran bentuk tetap di Python; berkas ini menyalin
 // bentuknya agar UI bertipe. Bila `VERSI_KONTRAK` naik, sesuaikan di sini.
 
-export const VERSI_KONTRAK = 2;
+export const VERSI_KONTRAK = 3;
 
 export type TipeKartu =
   | "sapaan"
@@ -11,6 +11,7 @@ export type TipeKartu =
   | "klarifikasi"
   | "untung"
   | "keuangan"
+  | "resep"
   | "belum_diketahui";
 
 export interface KartuSapaan {
@@ -107,6 +108,24 @@ export interface KartuKeuangan {
   teks_alt: string;
 }
 
+export interface MenungguHarga {
+  product_id: number;
+  bahan: string;
+}
+
+export interface KartuResep {
+  tipe: "resep";
+  product_id: number;
+  nama: string;
+  status: string; // "lengkap" | "belum"
+  konfirmasi: string;
+  modal_tampil: string | null;
+  satuan_hpp: string | null;
+  bahan_perlu_harga: string[];
+  menunggu: MenungguHarga | null;
+  teks_alt: string;
+}
+
 export interface KartuBelumDiketahui {
   tipe: "belum_diketahui";
   judul: string;
@@ -122,6 +141,7 @@ export type Kartu =
   | KartuKlarifikasi
   | KartuUntung
   | KartuKeuangan
+  | KartuResep
   | KartuBelumDiketahui;
 
 export interface PesanKeluar {
@@ -129,9 +149,18 @@ export interface PesanKeluar {
   kartu: Kartu[];
 }
 
+// Token kelanjutan tanya-jawab harga: dibawa klien dari `KartuResep.menunggu`
+// ke pesan jawaban berikutnya. Server memvalidasi ulang `product_id` milik
+// tenant (aturan #6) — klien tak tepercaya.
+export interface KonteksTunggu {
+  jenis: "harga_bahan";
+  product_id: number;
+  bahan: string;
+}
+
 // Body yang diterima BFF `/api/chat`.
 export type ChatBody =
-  | { teks: string }
+  | { teks: string; konteks?: KonteksTunggu }
   | { aksi: "tanya_untung" }
   | { aksi: "tanya_keuangan" }
   | { aksi: "koreksi_kategori"; transaksi_id: number; jenis: string };

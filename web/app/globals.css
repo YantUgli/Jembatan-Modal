@@ -627,6 +627,23 @@ button {
   margin-top: 4px;
 }
 
+/* ── Kartu resep: modal bikin per porsi ── */
+.resep-nama {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin-top: 8px;
+  text-transform: capitalize;
+}
+.resep-modal {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--hijau);
+  margin-top: 4px;
+  line-height: 1;
+}
+
 /* ── Kartu keuangan: untung usaha periode ── */
 .keu-head {
   display: flex;

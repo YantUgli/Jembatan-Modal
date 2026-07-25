@@ -19,6 +19,7 @@ from app.kanal.kontrak import (
     KartuKlarifikasi,
     KartuKonfirmasi,
     KartuNarasi,
+    KartuResep,
     KartuSapaan,
     KartuUntung,
     PesanKeluar,
@@ -26,6 +27,7 @@ from app.kanal.kontrak import (
     TipeKartu,
 )
 from app.kanal.orkestrator import (
+    KonteksTunggu,
     kartu_keuangan,
     kartu_untung,
     koreksi_kategori,
@@ -43,8 +45,10 @@ __all__ = [
     "KartuKlarifikasi",
     "KartuKonfirmasi",
     "KartuNarasi",
+    "KartuResep",
     "KartuSapaan",
     "KartuUntung",
+    "KonteksTunggu",
     "PesanKeluar",
     "PilihanKategori",
     "TipeKartu",

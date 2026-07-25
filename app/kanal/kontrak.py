@@ -26,7 +26,7 @@ from dataclasses import asdict, dataclass, field
 
 from enum import Enum
 
-VERSI_KONTRAK = 2
+VERSI_KONTRAK = 3
 
 
 class TipeKartu(str, Enum):
@@ -36,6 +36,7 @@ class TipeKartu(str, Enum):
     klarifikasi = "klarifikasi"
     untung = "untung"
     keuangan = "keuangan"
+    resep = "resep"
     belum_diketahui = "belum_diketahui"
 
 
@@ -240,6 +241,38 @@ class KartuKeuangan:
 
 
 @dataclass
+class KartuResep:
+    """Resep tercatat → **modal per porsi** (Pilar 4, jalur produksi).
+
+    ⛔ Bukan "untung usaha" (aturan #9): ini modal bikin per porsi, alat
+    keputusan harga. `modal_tampil` hanya terisi bila HPP `lengkap`; bila masih
+    ada bahan tanpa harga, `status="belum"` + `bahan_perlu_harga` menyebut apa
+    yang kurang — **bukan Rp0** (aturan #2). `konfirmasi` datang apa adanya dari
+    service (template kode, bukan LLM kedua).
+
+    `menunggu` = token kelanjutan tanya-jawab harga: `{product_id, bahan}` bahan
+    yang harganya sedang diminta. Klien melampirkannya ke pesan berikutnya
+    sebagai `konteks`; server memvalidasi ulang `product_id` milik tenant
+    (aturan #6). `None` = tak ada yang ditanyakan.
+    """
+
+    product_id: int
+    nama: str
+    status: str  # "lengkap" | "belum"
+    konfirmasi: str
+    modal_tampil: str | None = None
+    satuan_hpp: str | None = None
+    bahan_perlu_harga: list[str] = field(default_factory=list)
+    menunggu: dict | None = None  # {"product_id": int, "bahan": str}
+    teks_alt: str = ""
+    tipe: str = TipeKartu.resep.value
+
+    def __post_init__(self) -> None:
+        if not self.teks_alt:
+            self.teks_alt = self.konfirmasi
+
+
+@dataclass
 class KartuBelumDiketahui:
     """Data kurang → mengaku tenang (aturan #2). Bukan pesan error."""
 
@@ -262,6 +295,7 @@ Kartu = (
     | KartuKlarifikasi
     | KartuUntung
     | KartuKeuangan
+    | KartuResep
     | KartuBelumDiketahui
 )
 
@@ -298,6 +332,7 @@ __all__ = [
     "KartuUntung",
     "BarisPos",
     "KartuKeuangan",
+    "KartuResep",
     "KartuBelumDiketahui",
     "Kartu",
     "PesanKeluar",

@@ -14,6 +14,7 @@ di sini difilter olehnya — input pengguna dianggap tak tepercaya.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 
 from sqlalchemy import select
@@ -26,6 +27,7 @@ from app.kanal.kontrak import (
     KartuKeuangan,
     KartuKlarifikasi,
     KartuKonfirmasi,
+    KartuResep,
     KartuSapaan,
     KartuUntung,
     PesanKeluar,
@@ -44,15 +46,38 @@ from app.services.hpp import (
     hitung_hpp_semua,
 )
 from app.services.laba import hitung_laba_periode
-from app.tools import Klarifikasi, Tercatat, catat_transaksi, pilih_aksi
+from app.services.resep import HasilAturResep
+from app.tools import (
+    Klarifikasi,
+    Tercatat,
+    atur_resep_dari_teks,
+    catat_transaksi,
+    jawab_harga_bahan,
+    pilih_aksi,
+)
 
 __all__ = [
+    "KonteksTunggu",
     "tangani_pesan",
     "koreksi_kategori",
     "sapaan",
     "kartu_untung",
     "kartu_keuangan",
 ]
+
+
+@dataclass
+class KonteksTunggu:
+    """Token kelanjutan tanya-jawab yang dibawa klien (lihat `KartuResep.menunggu`).
+
+    ⛔ **Tak tepercaya** (aturan #6): `product_id` di sini berasal dari klien dan
+    **wajib** divalidasi ulang milik `business_id` sebelum dipakai — dilakukan di
+    `jawab_harga_bahan`, bukan diandaikan benar di sini.
+    """
+
+    jenis: str  # "harga_bahan"
+    product_id: int
+    bahan: str
 
 # Badge jenis pada kartu (bahasa warung, bukan istilah akuntansi).
 _JENIS_LABEL = {
@@ -80,15 +105,30 @@ def tangani_pesan(
     business_id: int,
     teks: str,
     hari_ini: date,
+    konteks: KonteksTunggu | None = None,
 ) -> PesanKeluar:
     """Satu kalimat pengguna → kartu.
 
-    Diarahkan dulu lewat `pilih_aksi` (klasifikasi enum tertutup, bukan
+    Bila ada `konteks` tanya-jawab harga (klien menjawab "Harga X berapa?"),
+    pesan dicoba dibaca sebagai **jawaban harga** dulu; berhasil → `KartuResep`
+    dengan modal ter-update (atau bahan berikutnya yang ditanya). Bila pesannya
+    ternyata bukan harga (pengguna ganti topik), ia **jatuh** ke alur normal —
+    tak terjebak menunggu.
+
+    Alur normal diarahkan lewat `pilih_aksi` (klasifikasi enum tertutup, bukan
     tool-calling — lihat docstring modul). `tanya_hpp` belum punya rute sendiri:
     dipetakan ke `kartu_untung` (margin per produk) sampai ada kartu HPP yang
     kontraknya benar-benar beda. Tak yakin/tak cocok → default pencatatan
     (Pilar 1), sama seperti perilaku sebelum router ini ada.
     """
+    if konteks is not None and konteks.jenis == "harga_bahan":
+        dijawab = jawab_harga_bahan(
+            session, adapter, business_id, konteks.product_id, konteks.bahan, teks, hari_ini
+        )
+        if dijawab is not None:
+            return PesanKeluar([_kartu_resep(dijawab)])
+        # Bukan jawaban harga → teruskan ke alur normal (tak terjebak).
+
     aksi = pilih_aksi(adapter, teks)
     if aksi is AksiRouter.tanya_untung:
         mulai, selesai = _periode_bulan_berjalan(hari_ini)
@@ -96,6 +136,13 @@ def tangani_pesan(
     if aksi is AksiRouter.tanya_keuangan:
         mulai, selesai = _periode_bulan_berjalan(hari_ini)
         return kartu_keuangan(session, business_id, mulai, selesai)
+    if aksi is AksiRouter.atur_resep:
+        hasil_resep = atur_resep_dari_teks(session, adapter, business_id, teks, hari_ini)
+        if isinstance(hasil_resep, Klarifikasi):
+            return PesanKeluar(
+                [KartuKlarifikasi(pertanyaan=hasil_resep.pertanyaan, yang_kurang=hasil_resep.yang_kurang)]
+            )
+        return PesanKeluar([_kartu_resep(hasil_resep)])
 
     hasil = catat_transaksi(session, adapter, business_id, teks, hari_ini)
     if isinstance(hasil, Klarifikasi):
@@ -364,6 +411,34 @@ def _periode(mulai: date, selesai: date) -> str:
 
 
 # ── Pembangun kartu ──────────────────────────────────────────────────────────
+
+
+def _kartu_resep(hasil: HasilAturResep) -> KartuResep:
+    """`HasilAturResep` service → kartu resep. Angka apa adanya (aturan #1) —
+    tak ada aritmatika di sini; HPP sudah dihitung service.
+
+    Bila masih ada bahan tanpa harga, `menunggu` menyimpan bahan **berikutnya**
+    yang ditanya (satu per giliran) sebagai token kelanjutan; klien
+    melampirkannya ke pesan jawaban. `product_id` di token divalidasi ulang
+    server saat jawaban datang (aturan #6).
+    """
+    hpp = hasil.hpp
+    lengkap = hpp.status is StatusHpp.lengkap and hpp.hpp_per_unit is not None
+    menunggu = (
+        {"product_id": hasil.product_id, "bahan": hasil.bahan_perlu_harga[0]}
+        if not lengkap and hasil.bahan_perlu_harga
+        else None
+    )
+    return KartuResep(
+        product_id=hasil.product_id,
+        nama=hasil.nama,
+        status="lengkap" if lengkap else "belum",
+        konfirmasi=hasil.konfirmasi,
+        modal_tampil=rupiah(hpp.hpp_per_unit) if lengkap else None,
+        satuan_hpp=hpp.satuan_hpp,
+        bahan_perlu_harga=list(hasil.bahan_perlu_harga),
+        menunggu=menunggu,
+    )
 
 
 def _kartu_konfirmasi(session: Session, business_id: int, hasil: Tercatat) -> KartuKonfirmasi:

@@ -8,6 +8,7 @@ import type {
   KartuKlarifikasi,
   KartuKonfirmasi,
   KartuNarasi,
+  KartuResep,
   KartuUntung,
 } from "@/lib/kontrak";
 import { Mark } from "./Brand";
@@ -184,6 +185,50 @@ export function UntungView({ kartu }: { kartu: KartuUntung }) {
         </span>
       )}
       <p className="kartu-catatan">{kartu.pesan}</p>
+    </div>
+  );
+}
+
+export function ResepView({ kartu }: { kartu: KartuResep }) {
+  // Modal per porsi (⛔ bukan "untung usaha" — aturan #9). Bila belum lengkap,
+  // jujur menyebut bahan yang harganya kurang & bertanya (aturan #2).
+  if (kartu.status === "lengkap") {
+    return (
+      <div className="kartu">
+        <div className="k-head">
+          <div className="k-check" aria-hidden />
+          <span className="label">Resep tercatat</span>
+        </div>
+        <div className="resep-nama">{kartu.nama}</div>
+        <div className="resep-modal">
+          {kartu.modal_tampil}
+          <span className="u-porsi"> / {kartu.satuan_hpp ?? "porsi"} modal bikin</span>
+        </div>
+        <p className="kartu-catatan">{kartu.konfirmasi}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="kartu-amber">
+      <div className="amber-head">
+        <div className="amber-dot" aria-hidden />
+        <span className="label">Resep tercatat — modal belum lengkap</span>
+      </div>
+      <div className="resep-nama">{kartu.nama}</div>
+      <p className="amber-teks">{kartu.konfirmasi}</p>
+      {kartu.bahan_perlu_harga.length > 0 && (
+        <div className="kurang">
+          {kartu.bahan_perlu_harga.map((b) => (
+            <span key={b}>{b}</span>
+          ))}
+        </div>
+      )}
+      {kartu.menunggu && (
+        <p className="amber-teks">
+          Harga {kartu.menunggu.bahan} berapa, Bu? Balas saja, misalnya “
+          {kartu.menunggu.bahan} sekilo 20rb”.
+        </p>
+      )}
     </div>
   );
 }

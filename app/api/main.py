@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.db import session_scope
 from app.kanal import (
+    KonteksTunggu,
     kartu_keuangan,
     kartu_untung,
     koreksi_kategori,
@@ -80,6 +81,18 @@ def business_saat_ini(session: Session = Depends(dapatkan_sesi)) -> Business:
 # ── Skema request ────────────────────────────────────────────────────────────
 
 
+class KonteksMasuk(BaseModel):
+    """Token kelanjutan tanya-jawab harga dari klien (lihat `KartuResep.menunggu`).
+
+    ⛔ `product_id` tak tepercaya — divalidasi ulang milik tenant di orchestrator
+    (aturan #6). `business_id` tetap diselesaikan server-side, tak dari sini.
+    """
+
+    jenis: str  # "harga_bahan"
+    product_id: int
+    bahan: str
+
+
 class PesanMasuk(BaseModel):
     teks: str | None = None
     aksi: str | None = None  # "koreksi_kategori" | "tanya_untung" | "tanya_keuangan"
@@ -89,6 +102,8 @@ class PesanMasuk(BaseModel):
     # berjalan diselesaikan server-side.
     mulai: date | None = None
     selesai: date | None = None
+    # Token kelanjutan tanya-jawab harga bahan (tanya-jawab multi-turn).
+    konteks: KonteksMasuk | None = None
 
 
 def _periode(pesan: PesanMasuk, hari_ini: date) -> tuple[date, date]:
@@ -142,6 +157,17 @@ def chat(
         return kartu_keuangan(session, business.id, mulai, selesai).ke_dict()
 
     if pesan.teks and pesan.teks.strip():
-        return tangani_pesan(session, adapter, business.id, pesan.teks.strip(), hari_ini).ke_dict()
+        konteks = (
+            KonteksTunggu(
+                jenis=pesan.konteks.jenis,
+                product_id=pesan.konteks.product_id,
+                bahan=pesan.konteks.bahan,
+            )
+            if pesan.konteks is not None
+            else None
+        )
+        return tangani_pesan(
+            session, adapter, business.id, pesan.teks.strip(), hari_ini, konteks
+        ).ke_dict()
 
     raise HTTPException(422, "Kirim `teks`, atau `aksi` yang didukung.")

@@ -289,6 +289,7 @@ class AksiRouter(str, enum.Enum):
     tanya_untung = "tanya_untung"
     tanya_keuangan = "tanya_keuangan"
     atur_resep = "atur_resep"
+    lihat_transaksi = "lihat_transaksi"
 
 
 @dataclass
@@ -298,7 +299,7 @@ class PilihanAksi:
 
 _INSTRUKSI_ROUTER = """
 Pemilik warung Indonesia mengirim satu kalimat ke asisten pencatatan keuangan.
-Tugasmu HANYA memilih `aksi` — TEPAT SATU dari empat label di bawah, tidak
+Tugasmu HANYA memilih `aksi` — TEPAT SATU dari lima label di bawah, tidak
 pernah label lain.
 
 - "catat_transaksi" bila kalimat menceritakan uang masuk/keluar yang perlu
@@ -318,6 +319,13 @@ pernah label lain.
   "bikin bolu pakai 4 telur, 1 kg tepung, jadi 20 potong", "cara buat kroket
   ..."). Ini BUKAN uang berpindah — jadi bukan "catat_transaksi". Kata kunci:
   "resep", "bikin ... pakai ...", "bahannya ...", "jadi ... porsi/kotak".
+- "lihat_transaksi" bila pengguna ingin MELIHAT KEMBALI daftar catatan yang
+  sudah masuk, satu per satu ("lihat catatan terakhir", "yang tadi udah kecatat
+  apa aja", "tampilkan transaksi", "coba lihat catatanku", "riwayat dong").
+  BEDAKAN dari "tanya_keuangan": "lihat_transaksi" minta DAFTAR ENTRI mentah
+  (baris demi baris); "tanya_keuangan" minta RINGKASAN/REKAP angka gabungan
+  (omzet, laba, untung). "lihat catatan" -> lihat_transaksi; "rekap untung
+  bulan ini" -> tanya_keuangan.
 
 PENTING — jangan minta detail tambahan:
 - Periode/tanggal TIDAK PERNAH kamu perlukan. Sistem di luar prompt ini sudah
@@ -328,7 +336,7 @@ PENTING — jangan minta detail tambahan:
   "jenis_laporan", atau semacamnya — skema hanya punya satu field: `aksi`).
 
 Hanya akui tidak yakin (`_gagal`) kalau kalimatnya benar-benar tidak cocok
-satu pun dari empat label (sapaan, obrolan di luar topik) atau bisa dibaca
+satu pun dari lima label (sapaan, obrolan di luar topik) atau bisa dibaca
 mendua ANTARA dua label di atas. Ketiadaan detail seperti periode/tanggal
 BUKAN alasan untuk tidak yakin.
 """.strip()

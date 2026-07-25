@@ -11,6 +11,7 @@ import {
   KonfirmasiView,
   NarasiView,
   ResepView,
+  RiwayatView,
   UntungView,
 } from "./Cards";
 
@@ -38,11 +39,13 @@ const SUGGESTIONS: {
   teks?: string;
   untung?: boolean;
   keuangan?: boolean;
+  riwayat?: boolean;
 }[] = [
   { label: "laku 5 kotak risol, 75rb", teks: "laku 5 kotak risol tadi, 75rb" },
   { label: "beli minyak 2 liter 38rb", teks: "beli minyak goreng 2 liter 38rb" },
   { label: "Untung per porsi?", untung: true },
   { label: "Laporan singkat", keuangan: true },
+  { label: "Catatan terakhir", riwayat: true },
 ];
 
 export default function Chat() {
@@ -123,7 +126,7 @@ export default function Chat() {
 
   // Aksi query (tombol, bukan NL): dorong bubble pengguna lalu render kartunya.
   const tanyaAksi = useCallback(
-    async (aksi: "tanya_untung" | "tanya_keuangan", label: string) => {
+    async (aksi: "tanya_untung" | "tanya_keuangan" | "lihat_transaksi", label: string) => {
       if (sibuk) return;
       setMenunggu(null); // aksi tombol = ganti topik, bukan jawaban harga
       setItems((prev) => [...prev, { id: nextId(), kind: "user", teks: label }]);
@@ -142,7 +145,9 @@ export default function Chat() {
     [sibuk, pushKartu, errorTenang],
   );
 
-  // Ketuk chip kategori → koreksi. Kartu konfirmasi diperbarui di tempat.
+  // Ketuk chip kategori → koreksi. Kartu konfirmasi diperbarui di tempat; untuk
+  // kartu riwayat, hanya baris yang dikoreksi yang diganti (append-only → baris
+  // pengganti ber-id baru), daftar lainnya tetap.
   const koreksi = useCallback(
     async (itemId: number, transaksiId: number, jenis: string) => {
       if (sibuk) return;
@@ -150,15 +155,26 @@ export default function Chat() {
       try {
         const p = await kirimChat({ aksi: "koreksi_kategori", transaksi_id: transaksiId, jenis });
         const baru = p.kartu[0];
-        if (baru && baru.tipe === "konfirmasi") {
-          setItems((prev) =>
-            prev.map((it) =>
-              it.id === itemId && it.kind === "kartu" ? { ...it, kartu: baru } : it,
-            ),
-          );
-        } else if (baru) {
+        if (!baru) return;
+        if (baru.tipe !== "konfirmasi") {
           pushKartu([baru]);
+          return;
         }
+        const pengganti = baru.baris[0];
+        setItems((prev) =>
+          prev.map((it) => {
+            if (it.id !== itemId || it.kind !== "kartu") return it;
+            if (it.kartu.tipe === "riwayat" && pengganti) {
+              const baris = it.kartu.baris.map((b) =>
+                b.transaksi_id === transaksiId
+                  ? { ...pengganti, tanggal_tampil: b.tanggal_tampil }
+                  : b,
+              );
+              return { ...it, kartu: { ...it.kartu, baris } };
+            }
+            return { ...it, kartu: baru };
+          }),
+        );
       } catch {
         errorTenang("Koreksi belum tersimpan — koneksi bermasalah. Coba lagi ya.");
       } finally {
@@ -228,7 +244,9 @@ export default function Chat() {
                   ? tanyaAksi("tanya_untung", s.label)
                   : s.keuangan
                     ? tanyaAksi("tanya_keuangan", s.label)
-                    : kirimTeks(s.teks!)
+                    : s.riwayat
+                      ? tanyaAksi("lihat_transaksi", s.label)
+                      : kirimTeks(s.teks!)
               }
             >
               {s.label}
@@ -289,6 +307,14 @@ function KartuView({
       return <KeuanganView kartu={kartu} />;
     case "resep":
       return <ResepView kartu={kartu} />;
+    case "riwayat":
+      return (
+        <RiwayatView
+          kartu={kartu}
+          sibuk={sibuk}
+          onKoreksi={(tid, jenis) => onKoreksi(itemId, tid, jenis)}
+        />
+      );
     default:
       return null;
   }

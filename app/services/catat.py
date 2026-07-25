@@ -31,6 +31,7 @@ from app.services.harga import catat_harga_jual_dari_penjualan
 __all__ = [
     "HasilKoreksi",
     "HasilPencatatan",
+    "daftar_transaksi_terakhir",
     "ringkas_transaksi",
     "simpan_transaksi",
     "terapkan_koreksi",
@@ -183,6 +184,29 @@ def transaksi_terakhir(session: Session, business_id: int) -> Transaction | None
         .order_by(Transaction.id.desc())
         .limit(1)
     ).first()
+
+
+def daftar_transaksi_terakhir(
+    session: Session, business_id: int, batas: int = 5
+) -> list[Transaction]:
+    """`batas` baris terakhir yang masih berlaku milik usaha ini, terbaru dulu.
+
+    Bentuk jamak dari `transaksi_terakhir` — untuk kartu riwayat "lihat catatan
+    terakhir". Isolasi tenant (aturan #6) & penyaringan `dibatalkan_pada`
+    ditegakkan di query, bukan diserahkan pemanggil: baris yang sudah dibatalkan
+    tak pernah tampil, dan buku usaha lain tak pernah ikut terbaca.
+    """
+    return list(
+        session.scalars(
+            select(Transaction)
+            .where(
+                Transaction.business_id == business_id,
+                Transaction.dibatalkan_pada.is_(None),
+            )
+            .order_by(Transaction.id.desc())
+            .limit(batas)
+        ).all()
+    )
 
 
 def ringkas_transaksi(t: Transaction) -> str:

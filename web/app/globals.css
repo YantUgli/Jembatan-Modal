@@ -397,6 +397,12 @@ button {
   border-radius: 20px;
   text-transform: uppercase;
 }
+.baris-tgl {
+  float: right;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tinta-45);
+}
 .nominal {
   font-size: 34px;
   font-weight: 800;

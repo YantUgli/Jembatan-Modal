@@ -25,6 +25,7 @@ from app.db import session_scope
 from app.kanal import (
     KonteksTunggu,
     kartu_keuangan,
+    kartu_riwayat,
     kartu_untung,
     koreksi_kategori,
     sapaan,
@@ -95,7 +96,7 @@ class KonteksMasuk(BaseModel):
 
 class PesanMasuk(BaseModel):
     teks: str | None = None
-    aksi: str | None = None  # "koreksi_kategori" | "tanya_untung" | "tanya_keuangan"
+    aksi: str | None = None  # koreksi_kategori | tanya_untung | tanya_keuangan | lihat_transaksi
     transaksi_id: int | None = None
     jenis: str | None = None  # nilai JenisTransaksi untuk koreksi_kategori
     # Periode opsional (ISO) untuk tanya_untung/tanya_keuangan; default bulan
@@ -155,6 +156,9 @@ def chat(
     if pesan.aksi == "tanya_keuangan":
         mulai, selesai = _periode(pesan, hari_ini)
         return kartu_keuangan(session, business.id, mulai, selesai).ke_dict()
+
+    if pesan.aksi == "lihat_transaksi":
+        return kartu_riwayat(session, business.id).ke_dict()
 
     if pesan.teks and pesan.teks.strip():
         konteks = (

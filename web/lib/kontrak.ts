@@ -2,7 +2,7 @@
 // Satu-satunya sumber kebenaran bentuk tetap di Python; berkas ini menyalin
 // bentuknya agar UI bertipe. Bila `VERSI_KONTRAK` naik, sesuaikan di sini.
 
-export const VERSI_KONTRAK = 3;
+export const VERSI_KONTRAK = 4;
 
 export type TipeKartu =
   | "sapaan"
@@ -12,6 +12,7 @@ export type TipeKartu =
   | "untung"
   | "keuangan"
   | "resep"
+  | "riwayat"
   | "belum_diketahui";
 
 export interface KartuSapaan {
@@ -46,6 +47,7 @@ export interface BarisKonfirmasi {
   qty_tampil: string | null;
   transaksi_id: number | null;
   kategori_pilihan: PilihanKategori[];
+  tanggal_tampil?: string | null; // "24 Jul" — hanya di kartu riwayat
 }
 
 export interface KartuKonfirmasi {
@@ -126,6 +128,14 @@ export interface KartuResep {
   teks_alt: string;
 }
 
+export interface KartuRiwayat {
+  tipe: "riwayat";
+  baris: BarisKonfirmasi[];
+  judul: string;
+  pesan: string;
+  teks_alt: string;
+}
+
 export interface KartuBelumDiketahui {
   tipe: "belum_diketahui";
   judul: string;
@@ -142,6 +152,7 @@ export type Kartu =
   | KartuUntung
   | KartuKeuangan
   | KartuResep
+  | KartuRiwayat
   | KartuBelumDiketahui;
 
 export interface PesanKeluar {
@@ -163,4 +174,5 @@ export type ChatBody =
   | { teks: string; konteks?: KonteksTunggu }
   | { aksi: "tanya_untung" }
   | { aksi: "tanya_keuangan" }
+  | { aksi: "lihat_transaksi" }
   | { aksi: "koreksi_kategori"; transaksi_id: number; jenis: string };

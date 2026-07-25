@@ -26,7 +26,7 @@ from dataclasses import asdict, dataclass, field
 
 from enum import Enum
 
-VERSI_KONTRAK = 3
+VERSI_KONTRAK = 4
 
 
 class TipeKartu(str, Enum):
@@ -37,6 +37,7 @@ class TipeKartu(str, Enum):
     untung = "untung"
     keuangan = "keuangan"
     resep = "resep"
+    riwayat = "riwayat"
     belum_diketahui = "belum_diketahui"
 
 
@@ -108,6 +109,9 @@ class BarisKonfirmasi:
     qty_tampil: str | None = None  # "5 kotak"
     transaksi_id: int | None = None
     kategori_pilihan: list[PilihanKategori] = field(default_factory=list)
+    # Diisi hanya di kartu riwayat (baris lintas hari perlu tanggal); kartu
+    # konfirmasi "baru saja" membiarkannya None.
+    tanggal_tampil: str | None = None  # "24 Jul"
 
 
 @dataclass
@@ -273,6 +277,42 @@ class KartuResep:
 
 
 @dataclass
+class KartuRiwayat:
+    """Daftar catatan terakhir — jalur baca "lihat transaksi terakhir".
+
+    Baris memakai ulang `BarisKonfirmasi` (bawa `transaksi_id` + chip kategori),
+    jadi tiap baris **bisa dibetulkan di tempat** lewat jalur `koreksi_kategori`
+    yang sudah ada. `tanggal_tampil` per baris menandai kapan (daftar bisa
+    lintas hari). ⛔ Tanpa aritmatika di sini (aturan #1): angka datang apa
+    adanya dari baris tersimpan. Daftar kosong → `baris=[]` + `pesan` jujur,
+    bukan baris karangan (aturan #2).
+    """
+
+    baris: list[BarisKonfirmasi]
+    judul: str
+    pesan: str
+    teks_alt: str = ""
+    tipe: str = TipeKartu.riwayat.value
+
+    def __post_init__(self) -> None:
+        if not self.teks_alt:
+            baris = [
+                " ".join(
+                    x
+                    for x in (
+                        b.tanggal_tampil,
+                        b.jenis_label,
+                        b.nominal_tampil,
+                        f"({b.produk})" if b.produk else None,
+                    )
+                    if x
+                )
+                for b in self.baris
+            ]
+            self.teks_alt = "\n".join([self.judul, *baris]).strip() if baris else self.pesan
+
+
+@dataclass
 class KartuBelumDiketahui:
     """Data kurang → mengaku tenang (aturan #2). Bukan pesan error."""
 
@@ -296,6 +336,7 @@ Kartu = (
     | KartuUntung
     | KartuKeuangan
     | KartuResep
+    | KartuRiwayat
     | KartuBelumDiketahui
 )
 
@@ -333,6 +374,7 @@ __all__ = [
     "BarisPos",
     "KartuKeuangan",
     "KartuResep",
+    "KartuRiwayat",
     "KartuBelumDiketahui",
     "Kartu",
     "PesanKeluar",

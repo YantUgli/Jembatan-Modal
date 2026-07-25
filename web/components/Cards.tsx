@@ -9,6 +9,7 @@ import type {
   KartuKonfirmasi,
   KartuNarasi,
   KartuResep,
+  KartuRiwayat,
   KartuUntung,
 } from "@/lib/kontrak";
 import { Mark } from "./Brand";
@@ -36,6 +37,7 @@ function BarisView({
     <div>
       <div className="nominal-blok">
         <span className="badge">{baris.jenis_label}</span>
+        {baris.tanggal_tampil && <span className="baris-tgl">{baris.tanggal_tampil}</span>}
         <div className="nominal">{baris.nominal_tampil}</div>
         {rincian && <div className="rincian">{rincian}</div>}
       </div>
@@ -79,6 +81,40 @@ export function KonfirmasiView({
           <BarisView baris={b} onKoreksi={onKoreksi} sibuk={sibuk} />
         </div>
       ))}
+    </div>
+  );
+}
+
+export function RiwayatView({
+  kartu,
+  onKoreksi,
+  sibuk,
+}: {
+  kartu: KartuRiwayat;
+  onKoreksi: (transaksiId: number, jenis: string) => void;
+  sibuk: boolean;
+}) {
+  // Daftar catatan terakhir — baris memakai ulang BarisView, jadi tiap baris
+  // bisa dibetulkan kategorinya di tempat (jalur koreksi_kategori). Kosong →
+  // pesan jujur, bukan baris palsu (aturan #2).
+  return (
+    <div className="kartu">
+      <div className="k-head">
+        <span className="label">{kartu.judul}</span>
+      </div>
+      {kartu.baris.length > 0 ? (
+        kartu.baris.map((b, i) => (
+          <div key={b.transaksi_id ?? i}>
+            {i > 0 && <div className="baris-pisah" />}
+            <BarisView baris={b} onKoreksi={onKoreksi} sibuk={sibuk} />
+          </div>
+        ))
+      ) : (
+        <div className="belum-kotak" style={{ marginTop: 12 }}>
+          <div className="belum-nilai">belum ada catatan</div>
+        </div>
+      )}
+      <p className="kartu-catatan">{kartu.pesan}</p>
     </div>
   );
 }

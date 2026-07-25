@@ -94,7 +94,7 @@ def test_untung_per_produk_angka_dari_db(session: Session, business: Business):
     _susun_skenario(session, business)
     keluar = kartu_untung(session, business.id, MULAI, SELESAI)
 
-    assert keluar.versi == VERSI_KONTRAK == 3
+    assert keluar.versi == VERSI_KONTRAK == 4
     kartu = keluar.kartu[0]
     assert isinstance(kartu, KartuUntung)
     per = {b.nama: b for b in kartu.produk}

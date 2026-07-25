@@ -28,6 +28,7 @@ from app.kanal.kontrak import (
     KartuKlarifikasi,
     KartuKonfirmasi,
     KartuResep,
+    KartuRiwayat,
     KartuSapaan,
     KartuUntung,
     PesanKeluar,
@@ -37,7 +38,7 @@ from app.llm.kontrak import AdapterLLM
 from app.llm.skema import AksiKoreksi, AksiRouter, Koreksi
 from app.models import Business, JenisTransaksi, Transaction
 from app.services.angka import _dec, _rapikan, _uang, rupiah
-from app.services.catat import terapkan_koreksi
+from app.services.catat import daftar_transaksi_terakhir, terapkan_koreksi
 from app.services.hpp import (
     HasilHpp,
     KonteksHarga,
@@ -63,6 +64,7 @@ __all__ = [
     "sapaan",
     "kartu_untung",
     "kartu_keuangan",
+    "kartu_riwayat",
 ]
 
 
@@ -143,6 +145,8 @@ def tangani_pesan(
                 [KartuKlarifikasi(pertanyaan=hasil_resep.pertanyaan, yang_kurang=hasil_resep.yang_kurang)]
             )
         return PesanKeluar([_kartu_resep(hasil_resep)])
+    if aksi is AksiRouter.lihat_transaksi:
+        return kartu_riwayat(session, business_id)
 
     hasil = catat_transaksi(session, adapter, business_id, teks, hari_ini)
     if isinstance(hasil, Klarifikasi):
@@ -397,7 +401,34 @@ def kartu_keuangan(session: Session, business_id: int, mulai: date, selesai: dat
     )
 
 
+def kartu_riwayat(session: Session, business_id: int, batas: int = 5) -> PesanKeluar:
+    """Daftar `batas` catatan terakhir — jalur baca "lihat transaksi terakhir".
+
+    Deterministik, tanpa LLM: router sudah mengklasifikasi intent; di sini murni
+    baca (`daftar_transaksi_terakhir`, difilter `business_id` di query, aturan
+    #6) lalu format tiap baris lewat `_baris` (yang dipakai bersama kartu
+    konfirmasi). Kosong → pesan jujur, bukan baris karangan (aturan #2). Baris
+    membawa `transaksi_id` + chip kategori → bisa dibetulkan di tempat lewat
+    `koreksi_kategori`.
+    """
+    rows = daftar_transaksi_terakhir(session, business_id, batas)
+    baris = [_baris(t) for t in rows]
+    if not baris:
+        pesan = (
+            "Belum ada catatan yang bisa ditampilkan. Begitu Ibu catat sesuatu, "
+            "nanti muncul di sini."
+        )
+    else:
+        pesan = "Ini catatan terakhir Ibu. Ketuk kategori kalau ada yang perlu dibetulkan."
+    return PesanKeluar([KartuRiwayat(baris=baris, judul="Catatan terakhir", pesan=pesan)])
+
+
 _BULAN = ["", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+
+
+def _tgl_pendek(t: date) -> str:
+    """'24 Jul' — tanggal ringkas per baris riwayat (bukan uang, bukan rupiah())."""
+    return f"{t.day} {_BULAN[t.month]}"
 
 
 def _periode(mulai: date, selesai: date) -> str:
@@ -471,6 +502,7 @@ def _baris(t: Transaction) -> BarisKonfirmasi:
             PilihanKategori(nilai=j.value, label=label, aktif=(t.jenis is j))
             for j, label in _KATEGORI
         ],
+        tanggal_tampil=_tgl_pendek(t.tanggal),
     )
 
 

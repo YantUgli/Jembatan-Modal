@@ -18,6 +18,7 @@ from app.models import (
     Business,
     CostItem,
     CostItemPrice,
+    HppSnapshot,
     JenisProduk,
     JenisTransaksi,
     Recipe,
@@ -26,8 +27,8 @@ from app.models import (
     Transaction,
 )
 from app.services.entitas import cari_cost_item, cari_produk
-from app.services.hpp import StatusHpp, hitung_hpp_produk
-from app.services.resep import atur_resep, catat_harga_bahan
+from app.services.hpp import StatusHpp, hitung_hpp_produk, riwayat_hpp
+from app.services.resep import atur_resep, catat_harga_bahan, rangkai_hasil
 
 from tests.conftest import buat_produk
 
@@ -92,6 +93,38 @@ def test_loop_produksi_lengkap(session: Session, business: Business):
     assert harga_ayam.harga_satuan == Decimal("36000.00")
 
 
+# ── Snapshot HPP (jalur nyata, bukan hanya lewat test hpp.py) ───────────────
+
+
+def test_atur_resep_menulis_snapshot_hpp(session: Session, business: Business):
+    """Menetapkan resep langsung meninggalkan jejak di `hpp_snapshots` —
+    tanpa ini, riwayat margin-watch tidak pernah mulai terisi (04-rencana-kerja.md)."""
+    _beli(session, business, "tepung", 13000, 1, "kg")
+
+    res = atur_resep(
+        session, business.id, "risol", Decimal("10"), "kotak",
+        _risol(("tepung", Decimal("1"), "kg")), TGL,
+    )
+
+    riwayat = riwayat_hpp(session, res.product_id, business.id)
+    assert len(riwayat) == 1
+    assert riwayat[0].hpp_per_unit == Decimal("1300.00")
+
+
+def test_atur_resep_ulang_tanpa_perubahan_tidak_menggandakan_snapshot(
+    session: Session, business: Business
+):
+    """Dedup `simpan_snapshot_hpp` berlaku juga lewat jalur nyata: upsert resep
+    yang menghasilkan HPP sama tidak menulis baris kedua."""
+    _beli(session, business, "tepung", 13000, 1, "kg")
+    bahan = _risol(("tepung", Decimal("1"), "kg"))
+
+    res1 = atur_resep(session, business.id, "risol", Decimal("10"), "kotak", bahan, TGL)
+    atur_resep(session, business.id, "risol", Decimal("10"), "kotak", bahan, TGL)
+
+    assert session.query(HppSnapshot).filter_by(product_id=res1.product_id).count() == 1
+
+
 # ── Degradasi jujur & harga yang ditanyakan ─────────────────────────────────
 
 
@@ -146,6 +179,28 @@ def test_catat_harga_bahan_menyusul(session: Session, business: Business):
     ulang = hitung_hpp_produk(session, res.product_id, business.id)
     assert ulang.status is StatusHpp.lengkap
     assert ulang.hpp_per_unit == Decimal("2200.00")
+
+
+def test_rangkai_hasil_menulis_snapshot_saat_harga_bahan_menyusul(
+    session: Session, business: Business
+):
+    """Jalur `jawab_harga_bahan` (tanya-jawab multi-turn) memanggil
+    `rangkai_hasil`, bukan `atur_resep` — harus tetap meninggalkan jejak
+    perpindahan `harga_tidak_lengkap` → `lengkap` di `hpp_snapshots`."""
+    _beli(session, business, "tepung", 13000, 1, "kg")
+    res = atur_resep(
+        session, business.id, "kroket", Decimal("10"), "kotak",
+        _risol(("tepung", Decimal("1"), "kg"), ("keju", Decimal("0.1"), "kg")),
+        TGL,
+    )  # snapshot #1: harga_tidak_lengkap
+
+    keju = cari_cost_item(session, business.id, "keju")
+    catat_harga_bahan(session, business.id, keju.id, Decimal("90000"), "kg", TGL)
+    ulang = rangkai_hasil(session, business.id, res.product_id)  # snapshot #2: lengkap
+
+    assert ulang.hpp.status is StatusHpp.lengkap
+    riwayat = riwayat_hpp(session, res.product_id, business.id)
+    assert [s.hpp_per_unit for s in riwayat] == [Decimal("2200.00"), None]
 
 
 # ── Invariant disambiguasi & isolasi tenant ─────────────────────────────────

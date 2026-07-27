@@ -21,8 +21,10 @@ from sqlalchemy.orm import Session
 
 from app.kanal import VERSI_KONTRAK, kartu_keuangan, kartu_untung
 from app.kanal.kontrak import KartuKeuangan, KartuUntung
-from app.models import Business, JenisTransaksi
+from app.models import Business, HppSnapshot, JenisTransaksi
 from app.models.base import JenisProduk
+from app.services.entitas import cari_produk
+from app.services.hpp import riwayat_hpp
 from tests.conftest import (
     buat_material,
     buat_produk,
@@ -145,6 +147,30 @@ def test_untung_tak_pernah_menyebut_untung_usaha(session: Session, business: Bus
     blob = json.dumps(kartu.__dict__, default=lambda o: o.__dict__).lower()
     assert "untung usaha" not in blob
     assert "untung kotor" in kartu.pesan or "laba kotor" in kartu.pesan
+
+
+def test_kartu_untung_menulis_snapshot_hpp(session: Session, business: Business):
+    """`kartu_untung` adalah satu-satunya jalur nyata yang menghitung HPP
+    produk **reseller** (produksi lewat `atur_resep`) — jadi harus jadi jalur
+    yang menuliskan snapshot untuk ketiganya, termasuk yang HPP-nya belum
+    diketahui (kroket, aturan #2)."""
+    _susun_skenario(session, business)
+
+    kartu_untung(session, business.id, MULAI, SELESAI)
+
+    assert session.query(HppSnapshot).count() == 3
+    risol = cari_produk(session, business.id, "risol")
+    kroket = cari_produk(session, business.id, "kroket")
+    nugget = cari_produk(session, business.id, "nugget")
+
+    assert riwayat_hpp(session, risol.id, business.id)[0].hpp_per_unit == Decimal("600.00")
+    assert riwayat_hpp(session, kroket.id, business.id)[0].hpp_per_unit is None
+    # nugget: satu-satunya jalur yang menyentuh HPP reseller (beli 40.000 / 2 pak).
+    assert riwayat_hpp(session, nugget.id, business.id)[0].hpp_per_unit == Decimal("20000.00")
+
+    # Dipanggil lagi tanpa perubahan data → dedup, tidak ada baris baru.
+    kartu_untung(session, business.id, MULAI, SELESAI)
+    assert session.query(HppSnapshot).count() == 3
 
 
 def test_untung_kosong_saat_belum_ada_produk(session: Session, business: Business):

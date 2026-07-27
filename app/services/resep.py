@@ -37,7 +37,7 @@ from app.models import (
 )
 from app.services.angka import _dec, _uang, rupiah
 from app.services.entitas import _normalisasi_nama, resolusi_cost_item, resolusi_produk
-from app.services.hpp import HasilHpp, StatusHpp, hitung_hpp_produk
+from app.services.hpp import HasilHpp, StatusHpp, hitung_hpp_produk, simpan_snapshot_hpp
 
 __all__ = [
     "HasilAturResep",
@@ -205,6 +205,7 @@ def atur_resep(
             )
 
     hasil = hitung_hpp_produk(session, produk.id, business_id)
+    simpan_snapshot_hpp(session, produk.id, business_id)
     return HasilAturResep(
         product_id=produk.id,
         nama=produk.nama,
@@ -235,6 +236,7 @@ def rangkai_hasil(
         select(Recipe).where(Recipe.product_id == produk.id)
     ).first()
     hasil = hitung_hpp_produk(session, produk.id, business_id)
+    simpan_snapshot_hpp(session, produk.id, business_id)
     return HasilAturResep(
         product_id=produk.id,
         nama=produk.nama,

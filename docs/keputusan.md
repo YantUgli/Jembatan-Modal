@@ -5,6 +5,170 @@
 
 ---
 
+## 2026-07-27 — Guard aturan #4 (`app/services/panduan_kur.py`), sebelum router 4c ditulis
+
+- **Konteks:** `SPEC_GUARD_4C.md` (dokumen kontrak dari pengguna) meminta guard
+  eksplisit — titik tunggal yang memutuskan apakah sebuah `panduan_entries`
+  layak dipakai menjawab pengguna — didesain & diuji **sebelum** baris kode
+  router 4c pertama ditulis, supaya penegakan aturan #4 tidak bisa "menyusul"
+  dan bocor lewat celah baru. 4c sendiri (`susun_dokumen_kur`,
+  `panduan_perizinan`, wawancara multi-turn) masih sepenuhnya `[ ]` di
+  `docs/04-rencana-kerja.md` Tahap 4c — belum ada router, tool, atau
+  orchestrator yang memanggil guard ini.
+- **Keputusan:**
+  1. Guard generik (`pilih_jawaban`/`jawab_panduan`): entri layak-jawab
+     hanya bila `status=aktif` **dan** `tingkat_sumber ∈ {resmi_regulasi,
+     resmi_bank}` **dan** `sumber_url` terisi. Tak ada kandidat layak →
+     `Penolakan` (string kode/template, bukan generasi LLM) — tidak pernah
+     turun ke kandidat tak-layak yang paling mirip. Satu-satunya jalan ke
+     `JawabanTerkutip` (union type, bukan string bebas) adalah fungsi ini —
+     mencegah jalur bypass yang lewat guard.
+  2. Guard topik bunga (`jawab_bunga_kur` + `KonteksBunga`): sebelum kategori
+     (Super Mikro / Mikro-Kecil), lalu sektor (produksi/perdagangan), lalu
+     orientasi ekspor diketahui, guard menolak dengan permintaan klarifikasi
+     — tidak pernah mengutip `bunga-overview` sebagai jawaban final. Routing
+     ke entri spesifik memakai `pertanyaan_kanonik` yang sama persis dengan
+     yang di-seed `app/seeds/panduan_kur_bunga.py` (konstanta diekspor dari
+     sana — satu-satunya sumber kebenaran teksnya, bukan disalin ulang).
+  3. 12 test di `tests/test_panduan_kur.py`, dipetakan langsung ke invariant
+     I1–I7 & acceptance criteria AC1–AC11 di `SPEC_GUARD_4C.md` §6 (nama test
+     mengikuti tabel itu). Termasuk sentinel `test_guard_tanpa_jalur_bypass`
+     (I1) dan skenario adversarial yang memakai **state DB nyata**: keempat
+     entri bunga hasil `panduan_kur_bunga.seed()` masih `status=draft` hari
+     ini, jadi guard menolak walau konteks sektor lengkap — bukti langsung
+     bahwa belum ada jalur "menyerah lalu menjawab saja".
+- **Alasan:** `SPEC_GUARD_4C.md` §7 eksplisit — guard menegakkan *kelayakan*
+  entri, bukan *kebenaran faktual*-nya (itu tetap tugas manusia lewat
+  `docs/checklist-verifikasi-bunga-kur.md`). Menulis & menguji guard sebagai
+  unit terpisah dari router memungkinkan kontraknya diverifikasi sekarang,
+  sebelum ada tekanan untuk "sementara" melewatinya saat router akhirnya
+  digarap.
+- **Konsekuensi:** file baru `app/services/panduan_kur.py`,
+  `tests/test_panduan_kur.py`; `app/seeds/panduan_kur_bunga.py` diperluas
+  (konstanta `PERTANYAAN_*` diekspor, isi tak berubah). Tidak ada perubahan
+  skema/migrasi — guard murni service-layer di atas `panduan_entries` yang
+  sudah ada. Guard ini **belum tersambung ke jalur produksi mana pun** (belum
+  ada tool/router KUR yang memanggilnya) — itu menyusul saat 4c digarap
+  sungguhan, dan `SPEC_GUARD_4C.md` §8 mensyaratkan guard + router + testnya
+  mendarat di commit yang sama saat itu terjadi. Juga membetulkan
+  `import sqlalchemy as sa` yang tak terpakai di migrasi
+  `d60152fe10b2` (luput dari `ruff check` sesi sebelumnya).
+
+---
+
+## 2026-07-27 — `StatusPanduan.draft` + seed draft bunga KUR (belum boleh dijawab)
+
+- **Konteks:** lanjutan keputusan di bawah ini (perluasan skema
+  `panduan_entries`). Draf isi bunga KUR (4 entri: overview/dispatcher +
+  3 spesifik-sektor — super mikro, produksi/ekspor, perdagangan non-ekspor)
+  disusun dari riset sekunder yang sama, **belum** dari pasal Permenko 1/2026
+  langsung. `StatusPanduan` saat itu cuma `aktif|superseded` — tak ada tempat
+  menyimpan "isi ada, tapi belum dicek ke pasal resmi" selain `aktif` (salah,
+  karena aturan #4 mewajibkan hanya entri terverifikasi yang boleh menjawab)
+  atau tidak menyimpannya sama sekali (hilang, padahal riset ini bahan kerja
+  nyata untuk verifikasi manual berikutnya).
+
+- **Keputusan:**
+  1. Tambah `StatusPanduan.draft` — pola identik `StatusImpor.draft` &
+     `StatusBarisImpor.draft` yang sudah ada (isi tersimpan, guard menolak
+     menjawab dari status ini persis seperti `tingkat_sumber=lainnya`).
+     Migrasi `d60152fe10b2`: no-op di SQLite (enum tersimpan VARCHAR tanpa
+     CHECK constraint — autogenerate tak mendeteksi diff), tapi
+     `ALTER TYPE ... ADD VALUE` eksplisit untuk Postgres (target produksi).
+     Downgrade Postgres sengaja tak didukung (butuh rebuild tipe penuh; belum
+     ada database produksi nyata yang butuh ini).
+  2. Empat entri draft di-seed via `app/seeds/panduan_kur_bunga.py`
+     (`topik="bunga"`, `status=draft`, `tingkat_sumber=resmi_regulasi`,
+     `sumber_url` masih placeholder). Checklist promosi draft→aktif per entri
+     ada di `docs/checklist-verifikasi-bunga-kur.md`.
+
+- **Alasan:** menyimpan riset sekunder sebagai `draft` (bukan `aktif` atau
+  dibuang) membuatnya jadi bahan kerja terstruktur untuk verifikasi manual
+  berikutnya, sambil skema tetap menegakkan aturan #4 secara struktural — tak
+  ada jalur bagi entri belum-terverifikasi untuk "bocor" ke jawaban pengguna
+  begitu guard service-layer ditulis di 4c.
+
+- **Konsekuensi:**
+  - `app/models/base.py` (`StatusPanduan.draft`), migrasi
+    `d60152fe10b2_tambah_status_draft_ke_panduan_entries.py`,
+    `app/seeds/panduan_kur_bunga.py` (baru), `docs/checklist-verifikasi-bunga-kur.md`
+    (baru), `tests/test_panduan_entries.py` +
+    `tests/test_seed_panduan_kur_bunga.py` (baru).
+  - `panduan_entries` sekarang punya 4 baris, semuanya `status=draft` — masih
+    nol baris `aktif`. Guard service-layer aturan #4 tetap belum ditulis (lih.
+    keputusan di bawah, poin 4) — menunggu 4c.
+
+---
+
+## 2026-07-27 — `panduan_entries` diperluas sebelum 4c digarap (asuransi skema)
+
+- **Konteks:** cross-check terhadap `panduan_entries` & fitur "asisten KUR (4c)"
+  (dipicu dokumen investigasi eksternal soal fakta KUR usang) menemukan bahwa
+  **4c belum digarap sama sekali** — `04-rencana-kerja.md` §4c seluruhnya
+  `[ ]`, `git log --all` tak pernah menyentuh kode KUR, dan `PanduanEntry` cuma
+  model ORM kosong tanpa tool/router/seed. `KurOutcome` juga tak punya tautan
+  ke `panduan_entries` sama sekali. Karena fiturnya belum ada, audit "temuan vs
+  perbaikan" jadi kurang relevan — momen yang tepat justru mengunci skema
+  sebelum baris kode 4c pertama ditulis, pola yang sama dengan keputusan
+  2026-07-17 (primitif biaya).
+
+  Validasi web (WebSearch/WebFetch) mengonfirmasi regulasi payung: Permenko
+  1/2026 berlaku 13 Januari 2026, mencabut rezim sebelumnya. Tapi bunga "flat
+  6%" tampaknya **bersyarat sektor** (produksi & perdagangan ekspor) — sumber
+  sekunder soal perdagangan non-ekspor (KUR Kecil) berbeda-beda, sebagian
+  menyebut skema berjenjang 6→9% masih berlaku untuk segmen itu. **Belum
+  dikonfirmasi ke teks pasal resmi** — lih. pertanyaan terbuka di bawah.
+
+- **Keputusan:**
+  1. `panduan_entries` diperluas ke skema target: `pertanyaan_kanonik`,
+     `tingkat_sumber` (enum `resmi_regulasi|resmi_bank|lainnya`, WAJIB),
+     `versi_regulasi`, `pasal_rujukan`, `tanggal_berlaku`, `tanggal_tinjau`
+     (menggantikan `berlaku_sampai` — nama lama ambigu antara "kapan regulasi
+     kadaluarsa" dan "kapan tim wajib mengecek ulang"; disepakati satu makna:
+     kapan wajib ditinjau), `status` (enum `aktif|superseded`, default
+     `aktif`), `digantikan_oleh` (self-FK, nullable). `topik` **tetap** String
+     bebas — konvensi repo (`base.py`) sengaja tidak meng-enum-kan field yang
+     daftarnya tumbuh, dan itu tidak dicabut oleh keputusan ini.
+  2. `kur_outcomes.panduan_entry_id` (nullable FK → `panduan_entries.id`)
+     ditambahkan — menutup gap "outcome tak bisa ditelusuri ke panduan yang
+     berlaku saat pengajuan terjadi", prasyarat kalibrasi per-versi-regulasi.
+  3. Entri `superseded` **tidak pernah dihapus** — hanya `status` berubah +
+     `digantikan_oleh` diisi. Ini bahan audit & kalibrasi `kur_outcomes`
+     historis dengan aturan yang berlaku saat pengajuan itu terjadi.
+  4. Guard aturan #4 (`status=aktif AND tingkat_sumber∈{resmi_regulasi,
+     resmi_bank}`) **belum ditulis di service layer** — menunggu tool
+     `panduan_perizinan`/`susun_dokumen_kur` sungguhan dibangun di 4c, supaya
+     guard lahir bersama tool-nya sejak baris pertama, bukan ditambal setelah
+     ada celah (pola yang sama dengan pelajaran `dibatalkan_pada` yang lupa
+     disaring — 2026-07-20).
+
+- **Alasan:** menambah field ke skema yang belum punya data = migrasi gratis;
+  menambahkannya setelah 4c berjalan & `panduan_entries` sudah terisi berarti
+  migrasi data + jendela waktu di mana aturan #4 bisa dilanggar tanpa kolom
+  untuk menegakkannya (`status`/`tingkat_sumber` tak ada = tak ada yang bisa
+  difilter). Ini murni perluasan pola "asuransi skema" yang sudah dipakai untuk
+  primitif biaya (`cost_items.tipe`) — biaya sekarang mendekati nol, biaya
+  nanti tidak.
+
+- **Konsekuensi:**
+  - Migrasi `4f88fdf0a67e_perluas_panduan_entries_dan_tautkan_kur_.py` +
+    `app/models/entities.py` (`PanduanEntry`, `KurOutcome`), `app/models/base.py`
+    (`TingkatSumber`, `StatusPanduan`), `tests/test_panduan_entries.py`
+    (skema saja — belum ada service/tool untuk diuji end-to-end).
+  - `app/tools/`, `app/kanal/`, seed **tidak disentuh** — 4c tetap menunggu
+    gilirannya di urutan roadmap 1+4→2→3.
+  - **Belum ada satu baris data pun** di `panduan_entries` — mengisinya
+    menunggu verifikasi manual ke teks pasal Permenko 1/2026 (JDIH:
+    `peraturan.go.id`/`jdih.setkab.go.id`), bukan ringkasan media manapun
+    termasuk hasil riset sesi ini.
+
+- **Pertanyaan terbuka:** apakah bunga flat 6% benar-benar bersyarat sektor
+  (produksi/ekspor) sementara perdagangan non-ekspor KUR Kecil tetap berjenjang
+  6→9% — sumber sekunder yang ditemukan saling berbeda. Siapa yang membaca
+  pasal resminya sebelum `panduan_entries` diisi data KUR pertama?
+
+---
+
 ## 2026-07-27 — Skor: margin tidak digerbangi cakupan HPP, dan periodenya 30 hari bergulir
 
 - **Konteks:** slice Skor Kesehatan Usaha (Tahap 4b) — celah kode terakhir di H2

@@ -37,9 +37,11 @@ from app.models.base import (
     JenisTransaksi,
     StatusBarisImpor,
     StatusImpor,
+    StatusPanduan,
     SumberHarga,
     SumberInput,
     TimestampMixin,
+    TingkatSumber,
     TipeKomponen,
     now_utc,
 )
@@ -140,9 +142,7 @@ class Transaction(Base):
     # `koreksi_dari_id`, sehingga riwayat "dulu salah tulis, lalu dibetulkan"
     # tetap bisa ditelusuri.
     dibatalkan_pada: Mapped[datetime | None] = mapped_column(DateTime, index=True)
-    koreksi_dari_id: Mapped[int | None] = mapped_column(
-        ForeignKey("transactions.id"), index=True
-    )
+    koreksi_dari_id: Mapped[int | None] = mapped_column(ForeignKey("transactions.id"), index=True)
 
     # ── tautan HPP (P4), semuanya nullable ──
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"), index=True)
@@ -200,8 +200,7 @@ class Product(TimestampMixin, Base):
             name="ck_products_isi_positif",
         ),
         CheckConstraint(
-            "isi_per_satuan_beli IS NULL "
-            "OR (satuan_beli IS NOT NULL AND satuan_jual IS NOT NULL)",
+            "isi_per_satuan_beli IS NULL OR (satuan_beli IS NOT NULL AND satuan_jual IS NOT NULL)",
             name="ck_products_konversi_butuh_satuan",
         ),
     )
@@ -211,7 +210,9 @@ class Product(TimestampMixin, Base):
         ForeignKey("businesses.id"), nullable=False, index=True
     )
     nama: Mapped[str] = mapped_column(String(120), nullable=False)
-    jenis: Mapped[JenisProduk] = mapped_column(Enum(JenisProduk, name="jenis_produk"), nullable=False)
+    jenis: Mapped[JenisProduk] = mapped_column(
+        Enum(JenisProduk, name="jenis_produk"), nullable=False
+    )
     # ⛔ `harga_jual` skalar sudah dipindah ke `product_prices` (bertanggal &
     # berkanal). Jangan dihidupkan lagi di sini — dua sumber kebenaran harga
     # adalah cara paling cepat membuat laporan bertengkar dengan dirinya sendiri.
@@ -251,7 +252,7 @@ class ProductPrice(Base):
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
     kanal: Mapped[str | None] = mapped_column(String(40))  # eceran|reseller|resto|…
     grade: Mapped[str | None] = mapped_column(String(20))  # A|B|…
-    min_qty: Mapped[float | None] = mapped_column(Qty)     # tier: berlaku mulai qty ini
+    min_qty: Mapped[float | None] = mapped_column(Qty)  # tier: berlaku mulai qty ini
     harga: Mapped[float] = mapped_column(Uang, nullable=False)
     berlaku_dari: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     catatan: Mapped[str | None] = mapped_column(String(160))
@@ -446,7 +447,9 @@ class Document(TimestampMixin, Base):
     business_id: Mapped[int] = mapped_column(
         ForeignKey("businesses.id"), nullable=False, index=True
     )
-    jenis: Mapped[JenisDokumen] = mapped_column(Enum(JenisDokumen, name="jenis_dokumen"), nullable=False)
+    jenis: Mapped[JenisDokumen] = mapped_column(
+        Enum(JenisDokumen, name="jenis_dokumen"), nullable=False
+    )
     periode: Mapped[str | None] = mapped_column(String(32))
     file_path: Mapped[str | None] = mapped_column(String(255))
 
@@ -474,6 +477,10 @@ class KurOutcome(TimestampMixin, Base):
         ForeignKey("businesses.id"), nullable=False, index=True
     )
     document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id"))
+    # Panduan yang berlaku saat pengajuan ini terjadi — dasar kalibrasi
+    # per-versi-regulasi nanti (flywheel §4). Nullable: outcome bisa dicatat
+    # sebelum panduan_entries terisi.
+    panduan_entry_id: Mapped[int | None] = mapped_column(ForeignKey("panduan_entries.id"))
     hasil: Mapped[HasilKur] = mapped_column(Enum(HasilKur, name="hasil_kur"), nullable=False)
     plafon_cair: Mapped[float | None] = mapped_column(Uang)
     alasan_penolakan: Mapped[str | None] = mapped_column(Text)
@@ -481,14 +488,38 @@ class KurOutcome(TimestampMixin, Base):
 
 
 class PanduanEntry(Base):
-    """Klaim regulasi WAJIB bersumber + bertanggal — bukan ingatan LLM."""
+    """Klaim regulasi WAJIB bersumber + bertanggal — bukan ingatan LLM (aturan #4).
+
+    `topik` sengaja String bebas (bukan enum) — konvensi repo untuk daftar yang
+    tumbuh (base.py). Field lain di bawah tertutup karena benar-benar tertutup:
+    hanya `status=aktif` DAN `tingkat_sumber in {resmi_regulasi, resmi_bank}`
+    yang boleh dipakai menjawab pengguna. `draft` = isi tersimpan (mis. dari
+    riset sekunder) tapi belum dicek ke pasal resmi — guard nanti menolaknya
+    persis seperti `tingkat_sumber = lainnya`. `superseded` disimpan untuk
+    audit & kalibrasi `kur_outcomes` historis, tidak pernah dihapus.
+    """
 
     __tablename__ = "panduan_entries"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    topik: Mapped[str] = mapped_column(String(40), nullable=False, index=True)  # kur|nib|izin_usaha|...
+    topik: Mapped[str] = mapped_column(
+        String(40), nullable=False, index=True
+    )  # kur|nib|izin_usaha|...
     jenis_usaha: Mapped[str | None] = mapped_column(String(120))
+    pertanyaan_kanonik: Mapped[str | None] = mapped_column(String(300))
     isi: Mapped[str] = mapped_column(Text, nullable=False)
     sumber_url: Mapped[str] = mapped_column(String(400), nullable=False)
+    tingkat_sumber: Mapped[TingkatSumber] = mapped_column(
+        Enum(TingkatSumber, name="tingkat_sumber"), nullable=False
+    )
+    versi_regulasi: Mapped[str | None] = mapped_column(String(80))
+    pasal_rujukan: Mapped[str | None] = mapped_column(String(80))
     tanggal_akses: Mapped[date] = mapped_column(Date, nullable=False)
-    berlaku_sampai: Mapped[date | None] = mapped_column(Date)
+    tanggal_berlaku: Mapped[date | None] = mapped_column(Date)
+    tanggal_tinjau: Mapped[date | None] = mapped_column(Date)
+    status: Mapped[StatusPanduan] = mapped_column(
+        Enum(StatusPanduan, name="status_panduan"),
+        nullable=False,
+        default=StatusPanduan.aktif,
+    )
+    digantikan_oleh: Mapped[int | None] = mapped_column(ForeignKey("panduan_entries.id"))

@@ -83,3 +83,22 @@ class HasilKur(str, enum.Enum):
     diajukan = "diajukan"
     lolos = "lolos"
     ditolak = "ditolak"
+
+
+class TingkatSumber(str, enum.Enum):
+    """Aturan #4: hanya dua tingkat ini yang boleh dipakai menjawab pengguna."""
+
+    resmi_regulasi = "resmi_regulasi"
+    resmi_bank = "resmi_bank"
+    lainnya = "lainnya"
+
+
+class StatusPanduan(str, enum.Enum):
+    """Sama pola dengan StatusImpor/StatusBarisImpor: `draft` = ada isinya
+    tapi belum boleh dipakai menjawab pengguna (aturan #4) sampai promosi
+    manual ke `aktif` setelah dicek ke pasal resmi.
+    """
+
+    draft = "draft"
+    aktif = "aktif"
+    superseded = "superseded"

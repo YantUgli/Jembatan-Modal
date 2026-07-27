@@ -57,6 +57,7 @@ from app.services.hpp import (
     StatusHpp,
     cakupan_hpp,
     hitung_hpp_semua,
+    simpan_snapshot_semua,
 )
 from app.services.impor import (
     BarisTinjau,
@@ -428,6 +429,7 @@ def kartu_untung(
     jadi `belum_diketahui` untuk periode lampau — memang belum diketahui.
     """
     hasil = hitung_hpp_semua(session, business_id, konteks or KonteksHarga(tanggal=selesai))
+    simpan_snapshot_semua(session, business_id)
     cak = cakupan_hpp(session, business_id, mulai, selesai)
     baris = [_baris_untung(h) for h in hasil]
 

@@ -1,0 +1,103 @@
+/* Gaya laporan PDF — SATU-SATUNYA tempat tata letak dokumen diatur.
+   Formatnya masih v1 dan menunggu tinjauan analis kredit (Tahap 0); dipisah dari
+   Python supaya revisi setelah itu = mengubah berkas ini saja.
+
+   Ditulis untuk WeasyPrint (kertas), bukan layar: tanpa dependensi font
+   eksternal, tanpa warna yang mati saat dicetak hitam-putih. */
+
+@page {
+  size: A4;
+  margin: 18mm 16mm 16mm;
+  @bottom-right {
+    content: "hal. " counter(page) " / " counter(pages);
+    font-size: 8pt;
+    color: #666;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "DejaVu Sans", "Segoe UI", Arial, sans-serif;
+  font-size: 9.5pt;
+  line-height: 1.45;
+  color: #1a1a1a;
+}
+
+/* ── Kop ─────────────────────────────────────────────────────────────────── */
+
+header { border-bottom: 1.5pt solid #1a1a1a; padding-bottom: 8pt; margin-bottom: 14pt; }
+
+.label {
+  margin: 0;
+  font-size: 8pt;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #555;
+}
+
+h1 { margin: 2pt 0 0; font-size: 17pt; line-height: 1.2; }
+
+.periode { margin: 1pt 0 8pt; font-size: 10pt; color: #444; }
+
+dl.identitas { display: flex; flex-wrap: wrap; margin: 0; gap: 2pt 18pt; }
+dl.identitas > div { min-width: 30%; }
+dl.identitas dt { font-size: 7.5pt; text-transform: uppercase; color: #666; letter-spacing: 0.05em; }
+dl.identitas dd { margin: 0 0 3pt; font-size: 9.5pt; }
+
+/* ── Bagian ──────────────────────────────────────────────────────────────── */
+
+section { margin-bottom: 13pt; break-inside: avoid; }
+
+h2 {
+  margin: 0 0 5pt;
+  font-size: 10.5pt;
+  border-bottom: 0.5pt solid #bbb;
+  padding-bottom: 2pt;
+}
+
+p { margin: 0 0 4pt; }
+
+.catatan { font-size: 8pt; color: #555; line-height: 1.4; margin-top: 4pt; }
+
+/* ── Tabel ───────────────────────────────────────────────────────────────── */
+
+table { width: 100%; border-collapse: collapse; }
+
+th, td { padding: 3.5pt 5pt; text-align: left; vertical-align: top; }
+
+thead th {
+  font-size: 7.5pt;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #555;
+  border-bottom: 0.75pt solid #999;
+}
+
+tbody tr { border-bottom: 0.4pt solid #e0e0e0; }
+
+/* Kolom angka rata kanan; kolom pertama tetap kiri (ia label, bukan angka). */
+table.angka td:not(:first-child),
+table.angka th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+
+table.dua-kolom td:first-child { width: 62%; }
+
+tr.jumlah { font-weight: 700; border-top: 0.75pt solid #999; border-bottom: none; }
+tr.rincian td { color: #555; font-size: 8.5pt; padding-left: 14pt; }
+
+/* Bulan tanpa catatan: tetap tampil, tapi jelas bahwa ia bolong — bukan nol
+   yang berarti "sudah dihitung dan hasilnya nol". */
+tr.kosong td { color: #888; font-style: italic; }
+
+/* ── Disclaimer & kaki ───────────────────────────────────────────────────── */
+
+section.disclaimer {
+  border: 0.75pt solid #1a1a1a;
+  padding: 7pt 9pt;
+  margin-top: 16pt;
+}
+section.disclaimer h2 { border: none; margin-bottom: 3pt; }
+section.disclaimer p { font-size: 8.5pt; margin: 0; }
+
+footer { margin-top: 12pt; font-size: 7.5pt; color: #666; }

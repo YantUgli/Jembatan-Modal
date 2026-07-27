@@ -5,6 +5,251 @@
 
 ---
 
+## 2026-07-27 — Sumbu waktu: periode dibaca kode, dan kartu wajib menyebut periodenya
+
+- **Konteks:** sampai slice ini seluruh produk hanya bisa menjawab satu periode,
+  bulan berjalan. *"untung bulan lalu berapa"* dijawab dengan angka bulan ini,
+  tanpa pesan salah dan tanpa tanda — kartunya tampak yakin. Dua hal memperbesar
+  taruhannya: `KartuUntung` memasang **cakupan HPP tanpa pernah menyebut
+  rentangnya**, dan slice impor baru saja membuat data bulan-bulan lampau mudah
+  masuk — data yang tak terlihat sama sekali dari chat.
+
+- **Keputusan:**
+  1. **Periode dibaca parser kode (`app/services/periode.py`), bukan LLM.**
+     Kosakata tertutup: hari ini · kemarin · minggu ini/lalu · bulan ini/lalu ·
+     nama bulan (+tahun opsional) · N bulan terakhir · tahun ini. LLM tak
+     ditambahi tugas; prompt router **tidak disentuh**.
+  2. **Invarian baru: kartu berangka wajib menyebut periodenya.**
+     `periode_tampil` jadi field **wajib** di `KartuUntung`; `KartuRiwayat`
+     membawanya bila berfilter. Kontrak render naik **VERSI 7→8**.
+  3. **Harga jual mengikuti akhir periode**, bukan hari ini —
+     `kartu_untung` mengoper `KonteksHarga(tanggal=selesai)` bila pemanggil tak
+     menyebut konteks.
+  4. **Riwayat tanpa periode tetap tak berfilter** (N terakhir keseluruhan);
+     hanya kalimat/chip berperiode yang memfilternya.
+  5. **Frasa masa depan dijawab pertanyaan balik**, bukan kartu berisi nol.
+  6. **Label periode dari klien yang tak dikenal → 422**, tak pernah jatuh
+     diam-diam ke default.
+  7. Parser dipanggil **setelah** router dan **hanya** untuk tiga label
+     pertanyaan (`tanya_untung`, `tanya_keuangan`, `lihat_transaksi`).
+
+- **Alasan:** butir 1 karena prompt router hari ini justru berbunyi *"Periode
+  /tanggal TIDAK PERNAH kamu perlukan"*, dan menambah field kedua ke
+  `PilihanAksi` berisiko menggeser akurasi label — di ukuran model ini prompt
+  jungkat-jungkit (`06-evaluasi-ekstraksi.md`). Kosakata waktu warung kecil dan
+  tertutup, jadi regex + aritmatika kalender menyelesaikannya dengan nol token,
+  nol latensi, dan bisa diuji habis. Butir 2 adalah **aturan #2 diperluas dari
+  nilai ke konteks**: persentase cakupan tanpa rentangnya adalah setengah angka,
+  dan justru karena parser pasti melewatkan parafrase ("dua bulan belakangan",
+  "sejak lebaran"), periode yang tertulis di kartu adalah **syarat kelayakan**
+  butir 1 — salah baca jadi terlihat pengguna dan bisa dibetulkan satu ketukan,
+  bukan diam-diam salah. Butir 3 karena `harga_jual_berlaku` jatuh ke `today()`
+  bila tanggalnya kosong, jadi untung Juni selama ini dihitung dengan harga jual
+  hari ini — persis kelas kesalahan yang tabel `product_prices` (append-only,
+  `berlaku_dari`) dibangun untuk mencegah. Butir 4 karena memfilter default ke
+  bulan berjalan akan menyembunyikan baris yang selama ini terlihat, dan pengguna
+  tak punya cara tahu ada yang hilang. Butir 5 & 6 satu keluarga: nol yang tampak
+  seperti hasil hitungan, dan jawaban periode-lain yang tampak sah, sama-sama
+  salah yang tak terlihat siapa pun. Butir 7 karena di jalur pencatatan tanggal
+  adalah **isi transaksi** ("kemarin jual bakso 400rb") dan sudah diurus
+  ekstraksi; membacanya sebagai kueri periode akan mengubah catatan jadi
+  pertanyaan.
+
+- **Konsekuensi:**
+  - Frasa di luar kosakata jatuh ke bulan berjalan — **sama seperti sebelum slice
+    ini**, jadi tak ada kemunduran; yang berubah, periodenya sekarang tertulis.
+    Perluasan kosakata menunggu data pemakaian nyata, bukan tebakan kita.
+  - Produk yang harganya baru tercatat setelah periode yang ditanya kini tampil
+    **tanpa laba** untuk periode lampau (modal tetap tampil). Itu jujur: harga
+    jualnya memang belum ada saat itu.
+  - Kalimat catatan kartu keuangan yang berbunyi "bulan ini" ditulis ulang jadi
+    "di periode ini" — keterangan yang benar hanya selama periodenya cuma satu.
+  - Jalur LLM untuk periode tetap terbuka: ia bisa ditumpuk **di atas** parser
+    ini kalau kelak terbukti kurang, tanpa membongkarnya — dan pada saat itu
+    `evaluasi/router.json` sudah jadi jaring regresinya.
+
+---
+
+## 2026-07-26 — Impor: pagar "tidak pernah auto-commit" dipasang di kotak chat
+
+- **Konteks:** slice fondasi Pilar 2. Yang digarap alurnya
+  (`parse → import_rows → tinjau → konfirmasi`), bukan koleksi parser-nya —
+  supaya sumber berikutnya cukup menambah satu adaptor. Saat menyambungkannya,
+  ketahuan aturan #3 bisa dilanggar **tanpa menyentuh kode impor sama sekali**:
+  pengguna menempel satu halaman buku tulis ke kotak chat, router
+  mengklasifikasinya `catat_transaksi`, dan `simpan_transaksi` menulis tiga puluh
+  baris langsung ke buku. Tak ada yang menyebutnya impor, tapi itu persis impor
+  yang auto-commit.
+
+- **Keputusan:**
+  1. **Belokan tempelan ada di `tangani_pesan`, bukan hanya di tool impor.**
+     Pesan dengan **≥3 baris berisi** dibelokkan ke jalur draft sebelum router
+     dipanggil. Deterministik (hitung baris), jadi nol token dan nol peluang
+     salah klasifikasi. Dua baris masih dianggap ketikan tangan.
+  2. **Adaptor #1 = tempelan teks, bukan foto** — menyimpang dari urutan Tahap 3,
+     dan alasannya dicatat: fixture berkas nyata masih utang Tahap 0, jadi uji
+     vision hari ini menguji gambar karangan sendiri. Foto masuk ke slot `Parser`
+     yang sama tanpa mengubah alur.
+  3. **Keyakinan baris dihitung kode, bukan dilaporkan model.** Skema ekstraksi
+     tak punya field keyakinan dan `bangun()` menolak field asing — model tak
+     punya slot untuk menilai dirinya sendiri. Sebab utama "ragu": **tanggal yang
+     tidak tertulis**.
+  4. **Aksi borongan tak pernah menyentuh baris ragu.** "Centang yang sudah
+     jelas" melewati baris ragu & tak terbaca; keduanya harus diketuk satu per
+     satu.
+  5. **Baris tak terbaca tetap ditampilkan**, tak dibuang diam-diam, dan tak bisa
+     dicentang.
+  6. **Commit lewat `simpan_transaksi` yang sama dengan jalur chat**, hanya
+     `sumber_input=impor` yang beda.
+  7. Komposer chat jadi **textarea**; kontrak render naik **VERSI 6→7**
+     (`KartuImpor` + `BarisImpor`).
+
+- **Alasan:** butir 1 karena larangan yang hidup di satu modul akan dilewati oleh
+  pintu lain di gedung yang sama — pagar harus berdiri di tempat perbuatannya
+  terjadi, dan tempat itu adalah kotak chat. Butir 3 adalah aturan #1 diterapkan
+  pada **angka penilaian**, perluasan yang sama dengan larangan skor komposit
+  (aturan #9): keyakinan yang dilaporkan model adalah tebakan berbaju wibawa.
+  Butir 4 karena aksi borongan yang ikut menyapu baris ragu mengubah peninjauan
+  jadi formalitas — dan formalitas adalah auto-commit dengan satu ketukan
+  tambahan. Butir 6 supaya tak lahir jalur tulis kedua yang perlahan menyimpang
+  dari yang pertama (penautan produk & umpan HPP ikut jalan gratis).
+  Sebab "tanggal tidak tertulis" (butir 3) dipilih karena di jalur chat
+  membiarkan tanggal jatuh ke hari ini hampir selalu benar, sedangkan di jalur
+  impor ia memindahkan halaman buku bulan Juni ke bulan Juli — menggeser setiap
+  laporan di atasnya tanpa ada yang salah tampak.
+
+- **Konsekuensi:**
+  - **Satu baris = satu panggilan ekstraksi.** Mahal secara nominal, sengaja:
+    impor jarang & sengaja (bukan aksi harian), satu baris busuk tak boleh
+    membunuh 29 baris sehat, dan penjaga `periksa_nominal` jadi tepat sasaran.
+    Obatnya kelak = chunking dengan jatuh-balik per-baris, **tanpa** mengubah
+    kontrak `Parser`.
+  - Tempelan dibatasi **60 baris**, ditolak (bukan dipotong) bila lewat —
+    peninjauan yang mustahil dilakukan di layar HP adalah peninjauan yang akan
+    dilewati.
+  - `import_rows` tak punya `business_id`, jadi setiap query barisnya **men-join
+    `imports`** (aturan #6). Tanpa itu, `import_id` dari klien cukup untuk
+    menulis ke buku usaha lain.
+  - `import_rows.parsed` menampung `catatan` & `yang_kurang` — keduanya memang
+    hasil parse, dan menumpangkannya menghindari migrasi kolom untuk data yang
+    bentuknya masih akan berubah saat adaptor lain menyusul. **Tanpa migrasi.**
+  - Komposer `<input>` → `<textarea>` bukan kosmetik: browser membuang newline
+    saat menempel ke input satu baris, jadi tanpa perubahan ini jalur impor
+    mustahil terpicu dari browser.
+
+---
+
+## 2026-07-26 — Laporan bank: tangga basis kas, bukan formula "Omzet − HPP"
+
+- **Konteks:** slice pertama H2 = laporan PDF, keluaran pertama produk ini yang
+  **dibaca orang lain** (AO bank/koperasi), bukan pemiliknya. Rencana kerja
+  Tahap 4a menuliskan formulanya sebagai *Omzet − HPP = Laba Kotor − Operasional
+  = Laba Bersih*. Begitu ditulis sebagai kode, formula itu tabrakan dengan aturan
+  #2: ia hanya benar bila cakupan HPP 100%, padahal cakupan parsial adalah
+  **kondisi normal** — dan justru angka yang wajib ditampilkan.
+
+- **Keputusan:**
+  1. **Tangga utama laporan = basis kas:** `Omzet − (Belanja + Operasional) =
+     Laba Bersih`, memakai `hitung_laba_periode` yang sudah ada. HPP & laba kotor
+     jadi **blok terpisah** yang menyebut cakupannya sendiri, dijembatani
+     `rekonsiliasi_biaya`. Kalimat formula di Tahap 4a **direvisi**, bukan
+     dipatuhi diam-diam.
+  2. **"Bulan pencatatan konsisten" tidak diberi ambang.** `02-arsitektur.md §4`
+     memintanya sebagai fakta penyalur; yang dilaporkan adalah **hari tercatat
+     per bulan** + rentetan bulan bercatatan, apa adanya.
+  3. **Laporan punya register bahasanya sendiri.** "Omzet", "Laba Bersih",
+     "Prive" dipakai apa adanya karena pembacanya AO — non-goal "bahasa warung
+     saja" berlaku untuk **UI chat**. Yang tetap dilarang: debit/kredit/jurnal.
+  4. **Laporan dijangkau lewat aksi terstruktur (tombol), bukan label router.**
+  5. Kontrak render naik **VERSI 5→6**: `KartuDokumen` + `BarisRingkas`.
+
+- **Alasan:** butir 1 adalah aturan #2 diterapkan pada aritmatika yang tampak
+  tak berbahaya. Mengurangkan `hpp_total` (modal untuk 78% penjualan) dari
+  **seluruh** omzet menghasilkan "Laba Kotor" yang sebagian dikarang — dan
+  dikarang di dokumen yang dibawa ke bank. Basis kas punya sifat yang tak dimiliki
+  jalur HPP: **cakupan biayanya 100% menurut definisi**. Ini juga sekadar
+  memperluas keputusan 2026-07-18 ("dua angka") ke dokumen: yang tak boleh
+  dilebur di layar juga tak boleh dilebur di kertas.
+  Butir 2 karena menetapkan sendiri "konsisten = ≥N hari" adalah **penilaian
+  berbaju angka** — hal yang sama yang aturan #9 larang untuk skor komposit.
+  Kami tak punya kalibrasi untuk ambang itu; AO punya kriterianya sendiri.
+  Butir 4 karena `evaluasi/router.json` sudah memetakan *"laporan singkat dong"*
+  → `tanya_keuangan`. Label `buat_laporan` akan bersaing langsung dengannya, dan
+  pelajaran `06-evaluasi-ekstraksi.md` berlaku. Membuat dokumen pun **tindakan
+  sengaja**, bukan pertanyaan sambil lalu: tombol lebih tepat, nol ambiguitas,
+  nol token.
+
+- **Konsekuensi:** `app/services/laporan.py` (angka, multi-bulan,
+  `fakta_penyalur`), `app/laporan/` (HTML + CSS cetak + PDF + pratinjau),
+  `app/tools/laporan.py` (simpan berkas & `documents`), `KartuDokumen`,
+  `POST /chat {aksi:"buat_laporan"}`, `GET /dokumen/{id}`, tombol di kartu
+  keuangan + proxy unduhan BFF. **Tanpa migrasi** — `documents` sudah ada.
+  Turunan yang ikut diputuskan:
+  - PDF di-impor **lazy**; WeasyPrint butuh GTK/Pango yang tak ada di mesin dev
+    Windows, jadi isi laporan **diuji tanpa PDF** dan diperiksa mata lewat
+    `python -m app.laporan.pratinjau`. Gagal render → **503 berpesan**, bukan 500.
+  - `rupiah()` kini menulis negatif sebagai `−Rp1.500`, bukan `Rp-1.500`.
+    'Rp-' di dokumen analis kredit terbaca seperti salah cetak.
+  - Uji negatif aturan #9 dipasang **sekarang**, saat mustahil dilanggar: tak ada
+    "skor" di sel/judul laporan & tak ada pola `NN/100`. Begitu `skor_pengguna`
+    lahir, test itulah yang menahan tangan.
+  - Data pengguna masuk markup untuk pertama kalinya → `html.escape` di satu
+    pintu (`app/laporan/html.py:_e`), dengan test injeksi.
+  - ⚠️ **Format masih v1 dan mengaku demikian di kaki dokumen.** Ia belum pernah
+    dilihat AO bank (Tahap 0). Isinya fakta, jadi revisi pasca-tinjauan
+    seharusnya kosmetik — seluruh tata letak ada di `app/laporan/laporan.css`.
+
+## 2026-07-26 — Koreksi lewat kalimat bebas: ragu antara catat & koreksi → mengaku tidak yakin
+
+- **Konteks:** `koreksi_transaksi` sudah lengkap & teruji sejak 2026-07-20, tapi
+  tak terjangkau dari chat — `AksiRouter` cuma punya 5 label dan fallback-nya
+  pencatatan. Akibatnya *"eh salah, harusnya 57rb"* bukan sekadar fitur yang
+  belum ada: ia **menambah transaksi hantu Rp57.000** di atas baris yang salah.
+  Menyambungkannya berarti menambah label ke-6, dan label itu punya sifat yang
+  tak dimiliki lima label lain — **ia menulis ke baris yang sudah ada**.
+
+- **Keputusan:**
+  1. Label ke-6 `koreksi_transaksi` masuk ke `AksiRouter`. Garis batasnya
+     terhadap `catat_transaksi` ditulis eksplisit di prompt (penanda "harusnya",
+     "bukan", "salah", "hapus", "yang tadi").
+  2. **Saat ragu ANTARA `catat_transaksi` dan `koreksi_transaksi`, router wajib
+     `_gagal`** — yang berarti jatuh ke pencatatan. Ini satu-satunya pasangan
+     label yang diberi aturan ragu tersendiri.
+  3. Sasaran koreksi bisa ditunjuk pengguna dari kartu riwayat lewat token
+     konteks yang dibawa klien (pola `KonteksTunggu` yang sudah ada) — dan
+     sasaran asing/tak ditemukan **berhenti di situ**, tidak jatuh ke alur
+     normal.
+  4. Kontrak render naik **VERSI 4→5**: `KartuKonfirmasi` bertambah
+     `dibatalkan_id`.
+
+- **Alasan:** dua arah kesalahan router tidak sama beratnya, tapi keduanya buruk
+  dengan cara berbeda. Salah baca catatan baru sebagai koreksi = **membatalkan
+  baris yang benar**; salah baca koreksi sebagai catatan = **transaksi hantu**.
+  Buku append-only membuat keduanya bisa dibalik, tapi hanya yang kedua yang
+  langsung terlihat pengguna di kartu konfirmasi. Karena itu default saat ragu
+  dipilih ke arah yang lebih kelihatan, bukan yang lebih senyap — perluasan
+  aturan #2 (mengaku tidak tahu) ke keputusan *routing*, bukan cuma ke angka.
+  Butir 3 memakai pagar yang sama: kalau id sasaran tak sah, kalimat koreksi
+  **tidak boleh** berubah jadi catatan baru hanya karena jalur koreksinya buntu.
+  `dibatalkan_id` ada karena buku append-only punya konsekuensi UI yang selama
+  ini ditanggung diam-diam: daftar riwayat yang sudah tergambar tak tahu baris
+  mana yang mati, sehingga catatan yang sudah dibetulkan tetap terlihat hidup di
+  layar. Server yang tahu, jadi server yang memberi tahu — bukan klien menebak.
+
+- **Konsekuensi:** `app/llm/skema.py` (+1 label, prompt router 6 label),
+  `orkestrator.py` (`KonteksTunggu` jadi dua jenis, `_kartu_koreksi`),
+  `main.py` (`KonteksMasuk` opsional per jenis), web (tombol "Betulkan" per baris
+  riwayat + penanda "sedang membetulkan" yang selalu punya jalan keluar).
+  **Tanpa migrasi** — kolomnya sudah ada sejak `12e4f362ee11`.
+  Set evaluasi baru `evaluasi/router.json` + `app/llm/evaluasi_router.py`:
+  separuh isinya kasus label **lama** sebagai pengaman regresi, karena pelajaran
+  `docs/06-evaluasi-ekstraksi.md` — di ukuran model ini menambal satu label bisa
+  merusak label lain. Kalau itu terjadi, jalan keluarnya menurunkan kasusnya ke
+  `_gagal`, **bukan** memaksa prompt.
+  ⚠️ Gelembung konfirmasi lama di layar sengaja **tidak** diperbarui saat baris
+  di dalamnya dikoreksi — itu catatan percakapan saat itu; yang diperbarui hanya
+  kartu riwayat (daftar berjalan).
+
 ## 2026-07-22 — `docs/` repo kode jadi rumah resmi dokumen perencanaan
 
 - **Konteks:** CLAUDE.md menyatakan "perencanaan hidup di repo terpisah" dengan

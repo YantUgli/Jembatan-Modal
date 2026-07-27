@@ -31,6 +31,7 @@ from app.services.harga import catat_harga_jual_dari_penjualan
 __all__ = [
     "HasilKoreksi",
     "HasilPencatatan",
+    "daftar_transaksi_periode",
     "daftar_transaksi_terakhir",
     "ringkas_transaksi",
     "simpan_transaksi",
@@ -202,6 +203,35 @@ def daftar_transaksi_terakhir(
             .where(
                 Transaction.business_id == business_id,
                 Transaction.dibatalkan_pada.is_(None),
+            )
+            .order_by(Transaction.id.desc())
+            .limit(batas)
+        ).all()
+    )
+
+
+def daftar_transaksi_periode(
+    session: Session, business_id: int, mulai: date, selesai: date, batas: int = 5
+) -> list[Transaction]:
+    """`batas` baris terakhir **di dalam rentang tanggal**, terbaru dulu.
+
+    Kembaran berperiode dari `daftar_transaksi_terakhir` — untuk "lihat catatan
+    bulan lalu". Isolasi tenant (aturan #6) & `dibatalkan_pada` disaring di
+    query, sama seperti kembarannya: pembaca baru yang lupa menyaring tidak
+    akan memunculkan error, cuma menghidupkan lagi baris yang sudah dibetulkan.
+
+    Rentang **inklusif** di kedua ujung — sama dengan `hitung_laba_periode` dan
+    `cakupan_hpp`, supaya daftar dan angka rekap tak pernah berbeda isi untuk
+    periode yang sama.
+    """
+    return list(
+        session.scalars(
+            select(Transaction)
+            .where(
+                Transaction.business_id == business_id,
+                Transaction.dibatalkan_pada.is_(None),
+                Transaction.tanggal >= mulai,
+                Transaction.tanggal <= selesai,
             )
             .order_by(Transaction.id.desc())
             .limit(batas)

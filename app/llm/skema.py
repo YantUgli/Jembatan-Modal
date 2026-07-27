@@ -286,6 +286,7 @@ class AksiRouter(str, enum.Enum):
     2026-07-22: "Router intent bahasa-bebas")."""
 
     catat_transaksi = "catat_transaksi"
+    koreksi_transaksi = "koreksi_transaksi"
     tanya_untung = "tanya_untung"
     tanya_keuangan = "tanya_keuangan"
     atur_resep = "atur_resep"
@@ -299,12 +300,21 @@ class PilihanAksi:
 
 _INSTRUKSI_ROUTER = """
 Pemilik warung Indonesia mengirim satu kalimat ke asisten pencatatan keuangan.
-Tugasmu HANYA memilih `aksi` — TEPAT SATU dari lima label di bawah, tidak
+Tugasmu HANYA memilih `aksi` — TEPAT SATU dari enam label di bawah, tidak
 pernah label lain.
 
 - "catat_transaksi" bila kalimat menceritakan uang masuk/keluar yang perlu
   dicatat ("laku 5 kotak risol 75rb", "beli minyak 38rb", "ambil 60rb buat
   jajan anak").
+- "koreksi_transaksi" bila pengguna MEMBETULKAN atau MEMBATALKAN catatan yang
+  SUDAH masuk ("eh salah, harusnya 57rb", "itu bukan 75rb", "yang tadi keliru",
+  "hapus yang barusan", "batalin catatan tadi", "itu buat pribadi", "bukan
+  kemarin, tapi hari ini", "salah, itu bukan jualan").
+  BEDAKAN dari "catat_transaksi": "catat_transaksi" menceritakan peristiwa uang
+  BARU; "koreksi_transaksi" menunjuk kembali ke catatan LAMA untuk dibetulkan
+  atau dihapus. Penanda koreksi: "harusnya", "bukan ...", "salah", "keliru",
+  "hapus", "batalin", "yang tadi/barusan/itu". Kalimat tanpa penanda seperti itu
+  dan menyebut kejadian jual/beli = "catat_transaksi".
 - "tanya_untung" bila pengguna bertanya untung/modal/margin PER PRODUK
   ("untung risol berapa sih", "modal per kotaknya berapa", "produk mana yang
   paling untung").
@@ -336,9 +346,13 @@ PENTING — jangan minta detail tambahan:
   "jenis_laporan", atau semacamnya — skema hanya punya satu field: `aksi`).
 
 Hanya akui tidak yakin (`_gagal`) kalau kalimatnya benar-benar tidak cocok
-satu pun dari lima label (sapaan, obrolan di luar topik) atau bisa dibaca
+satu pun dari enam label (sapaan, obrolan di luar topik) atau bisa dibaca
 mendua ANTARA dua label di atas. Ketiadaan detail seperti periode/tanggal
 BUKAN alasan untuk tidak yakin.
+
+Khusus ragu ANTARA "catat_transaksi" dan "koreksi_transaksi": pilih `_gagal`.
+Menebak "koreksi" untuk kalimat yang sebenarnya penjualan baru akan membatalkan
+catatan yang sudah benar — lebih baik mengaku tidak yakin.
 """.strip()
 
 

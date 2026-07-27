@@ -18,7 +18,7 @@ from app.kanal.orkestrator import koreksi_kategori, tangani_pesan
 from app.llm.palsu import AdapterPalsu
 from app.llm.skema import AksiRouter
 from app.models import Business, JenisTransaksi, Transaction
-from app.services.catat import daftar_transaksi_terakhir
+from app.services.catat import daftar_transaksi_periode, daftar_transaksi_terakhir
 from app.tools.pilih_aksi import pilih_aksi
 from tests.conftest import buat_transaksi
 
@@ -74,6 +74,44 @@ def test_daftar_isolasi_tenant(session: Session, business: Business, tetangga: B
 
     rows = daftar_transaksi_terakhir(session, business.id)
     assert [r.id for r in rows] == [milik.id]  # buku tetangga tak bocor (aturan #6)
+
+
+# ── Service baca berperiode ─────────────────────────────────────────────────
+
+
+def test_periode_inklusif_di_kedua_ujung(session: Session, business: Business):
+    """Rentang sama persis dengan `hitung_laba_periode` & `cakupan_hpp` —
+    kalau tidak, daftar dan angka rekap bisa berbeda isi untuk periode yang sama.
+    """
+    sebelum = _catat(session, business, JenisTransaksi.pemasukan, 1000, date(2026, 5, 31))
+    awal = _catat(session, business, JenisTransaksi.pemasukan, 2000, date(2026, 6, 1))
+    akhir = _catat(session, business, JenisTransaksi.pemasukan, 3000, date(2026, 6, 30))
+    sesudah = _catat(session, business, JenisTransaksi.pemasukan, 4000, date(2026, 7, 1))
+
+    rows = daftar_transaksi_periode(session, business.id, date(2026, 6, 1), date(2026, 6, 30))
+    ids = {r.id for r in rows}
+
+    assert {awal.id, akhir.id} <= ids
+    assert sebelum.id not in ids
+    assert sesudah.id not in ids
+
+
+def test_periode_kecualikan_dibatalkan(session: Session, business: Business):
+    hidup = _catat(session, business, JenisTransaksi.pemasukan, 75000, date(2026, 6, 10))
+    batal = _catat(session, business, JenisTransaksi.pengeluaran, 38000, date(2026, 6, 11))
+    batal.dibatalkan_pada = datetime(2026, 6, 12, 10, 0, 0)
+    session.flush()
+
+    rows = daftar_transaksi_periode(session, business.id, date(2026, 6, 1), date(2026, 6, 30))
+    assert [r.id for r in rows] == [hidup.id]
+
+
+def test_periode_isolasi_tenant(session: Session, business: Business, tetangga: Business):
+    milik = _catat(session, business, JenisTransaksi.pemasukan, 75000, date(2026, 6, 10))
+    _catat(session, tetangga, JenisTransaksi.pemasukan, 999000, date(2026, 6, 10))
+
+    rows = daftar_transaksi_periode(session, business.id, date(2026, 6, 1), date(2026, 6, 30))
+    assert [r.id for r in rows] == [milik.id]  # aturan #6 ditegakkan di query
 
 
 # ── Orchestrator end-to-end ─────────────────────────────────────────────────

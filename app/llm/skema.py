@@ -22,13 +22,18 @@ from app.models.base import JenisTransaksi
 __all__ = [
     "AksiKoreksi",
     "AksiRouter",
+    "BarisResepBahan",
     "BarisTransaksi",
     "HasilCatat",
+    "HasilResep",
+    "JawabHarga",
     "JenisTransaksi",
     "Koreksi",
     "PilihanAksi",
     "instruksi_catat",
+    "instruksi_harga",
     "instruksi_koreksi",
+    "instruksi_resep",
     "instruksi_router",
 ]
 
@@ -51,6 +56,29 @@ class HasilCatat:
     """Satu kalimat bisa memuat beberapa transaksi ("laku 75rb, beli minyak 38rb")."""
 
     baris: list[BarisTransaksi] = field(default_factory=list)
+
+
+@dataclass
+class BarisResepBahan:
+    """Satu bahan dalam resep: takaran per sekali masak. **Tanpa uang** —
+    harga bahan masuk lewat jalur terpisah (pembelian / tanya-jawab), bukan
+    dari kalimat resep. Jadi skema ini bebas dari penjaga aturan #1."""
+
+    nama: str
+    qty: Decimal
+    satuan: str | None = None
+
+
+@dataclass
+class HasilResep:
+    """Resep terstruktur dari kalimat pemilik: sekali masak `yield_qty`
+    `yield_satuan`, memakai `bahan`. `yield` wajib — tanpa "jadi berapa" modal
+    per porsi tak bisa dibagi (info kurang, bukan ditebak)."""
+
+    nama_produk: str
+    yield_qty: Decimal
+    yield_satuan: str | None = None
+    bahan: list[BarisResepBahan] = field(default_factory=list)
 
 
 _INSTRUKSI = """
@@ -174,14 +202,95 @@ def instruksi_catat(hari_ini: date) -> str:
     return _INSTRUKSI.format(hari_ini=hari_ini.isoformat())
 
 
+_INSTRUKSI_RESEP = """
+Pemilik warung Indonesia menceritakan RESEP sebuah produk yang ia BUAT sendiri
+(bukan barang kulakan). Ubah jadi resep terstruktur. Tanggal acuan: {hari_ini}.
+
+- `nama_produk`: nama barang jadinya ("risol", "kroket", "bolu").
+- `yield_qty` + `yield_satuan`: sekali masak jadi berapa ("sekali bikin 10
+  kotak" -> yield_qty 10, yield_satuan "kotak"). WAJIB. Kalau tidak disebut
+  berapa hasil sekali masak, itu informasi yang kurang — jangan menebak 1.
+- `bahan`: daftar bahan + takarannya. "tepung 1 kg" -> nama "tepung", qty 1,
+  satuan "kg". "minyak setengah liter" -> qty 0.5, satuan "liter". "ayam
+  sekilo" -> qty 1, satuan "kg".
+
+DILARANG menyebut UANG/HARGA. Resep hanya bahan + takaran; harga bahan diurus
+terpisah. Kalau pemilik menyebut harga ("keju sekilo 90rb"), ABAIKAN angka
+harganya — cukup catat bahan "keju" dengan takarannya bila ada.
+
+Takaran: salin apa adanya, JANGAN mengonversi satuan. Kalau sebuah bahan
+takarannya tidak disebut, kosongkan qty & satuannya — jangan mengarang "1".
+Slang takaran: "sekilo"=1 kg, "setengah kilo"/"seperempat kilo" -> 0.5 / 0.25
+kg, "seons"/"1 ons"=1 ons.
+
+Kalau kalimatnya bukan resep (tidak ada bahan, atau tidak ada barang jadi yang
+dibuat), itu informasi yang kurang.
+""".strip()
+
+
+def instruksi_resep(hari_ini: date) -> str:
+    """Instruksi sistem untuk mengekstrak resep (bebas-uang).
+
+    Tanggal acuan disuntik demi reproduksibilitas, sama seperti `instruksi_catat`.
+    """
+    return _INSTRUKSI_RESEP.format(hari_ini=hari_ini.isoformat())
+
+
+@dataclass
+class JawabHarga:
+    """Jawaban pemilik atas pertanyaan harga sebuah bahan.
+
+    `nominal` = uang yang disebut; `qty` = berapa banyak satuan yang harga itu
+    mencakupnya ("2 kilo 180rb" → nominal 180000, qty 2, satuan "kg"). Harga
+    satuan = `nominal ÷ qty` **dihitung kode**, bukan model (aturan #1)."""
+
+    nominal: Decimal
+    qty: Decimal | None = None
+    satuan: str | None = None
+
+
+_INSTRUKSI_HARGA = """
+Pemilik warung menjawab pertanyaan: berapa HARGA bahan "{bahan}"?
+Tanggal acuan: {hari_ini}.
+
+Tangkap:
+- `nominal`: uang yang disebut, angka polos tanpa "Rp"/pemisah ribuan.
+- `qty`: berapa banyak satuan yang harga itu mencakupnya. "sekilo 90rb" -> qty 1;
+  "2 kilo 180rb" -> qty 2; "sekarung 25kg 300rb" -> qty 25 (satuan kg). Kalau
+  tak jelas berapa banyak, kosongkan.
+- `satuan`: satuan dari qty ("kg", "liter", "ons", "bungkus"). Salin apa adanya,
+  jangan konversi.
+
+DILARANG BERHITUNG. `nominal` adalah uang yang benar-benar diucapkan, bukan hasil
+perkalian/pembagian. Harga per satuan dihitung sistem, bukan kamu.
+Slang: "goceng"=5000, "ceban"=10000, "gopek"=500, "cepek"=100, "seceng"=1000,
+"90rb"/"90k"=90000, "1,5jt"=1500000.
+
+Kalau kalimatnya sama sekali tidak menyebut harga/uang untuk "{bahan}", itu bukan
+jawaban harga — informasi yang kurang.
+""".strip()
+
+
+def instruksi_harga(bahan: str, hari_ini: date) -> str:
+    """Instruksi sistem untuk mengekstrak jawaban harga sebuah bahan.
+
+    `bahan` disuntik **kode** dari token kelanjutan (bukan teks bebas pengguna),
+    jadi isi buku tak bisa disetir lewat kalimat masukan (aturan #6).
+    """
+    return _INSTRUKSI_HARGA.format(bahan=bahan, hari_ini=hari_ini.isoformat())
+
+
 class AksiRouter(str, enum.Enum):
     """Ke mana kalimat bebas pengguna diarahkan. Enum tertutup — router hanya
     boleh memilih dari sini, tidak pernah mengarang aksi lain (keputusan.md
     2026-07-22: "Router intent bahasa-bebas")."""
 
     catat_transaksi = "catat_transaksi"
+    koreksi_transaksi = "koreksi_transaksi"
     tanya_untung = "tanya_untung"
     tanya_keuangan = "tanya_keuangan"
+    atur_resep = "atur_resep"
+    lihat_transaksi = "lihat_transaksi"
 
 
 @dataclass
@@ -191,12 +300,21 @@ class PilihanAksi:
 
 _INSTRUKSI_ROUTER = """
 Pemilik warung Indonesia mengirim satu kalimat ke asisten pencatatan keuangan.
-Tugasmu HANYA memilih `aksi` — TEPAT SATU dari tiga label di bawah, tidak
+Tugasmu HANYA memilih `aksi` — TEPAT SATU dari enam label di bawah, tidak
 pernah label lain.
 
 - "catat_transaksi" bila kalimat menceritakan uang masuk/keluar yang perlu
   dicatat ("laku 5 kotak risol 75rb", "beli minyak 38rb", "ambil 60rb buat
   jajan anak").
+- "koreksi_transaksi" bila pengguna MEMBETULKAN atau MEMBATALKAN catatan yang
+  SUDAH masuk ("eh salah, harusnya 57rb", "itu bukan 75rb", "yang tadi keliru",
+  "hapus yang barusan", "batalin catatan tadi", "itu buat pribadi", "bukan
+  kemarin, tapi hari ini", "salah, itu bukan jualan").
+  BEDAKAN dari "catat_transaksi": "catat_transaksi" menceritakan peristiwa uang
+  BARU; "koreksi_transaksi" menunjuk kembali ke catatan LAMA untuk dibetulkan
+  atau dihapus. Penanda koreksi: "harusnya", "bukan ...", "salah", "keliru",
+  "hapus", "batalin", "yang tadi/barusan/itu". Kalimat tanpa penanda seperti itu
+  dan menyebut kejadian jual/beli = "catat_transaksi".
 - "tanya_untung" bila pengguna bertanya untung/modal/margin PER PRODUK
   ("untung risol berapa sih", "modal per kotaknya berapa", "produk mana yang
   paling untung").
@@ -205,6 +323,19 @@ pernah label lain.
   rincian ("untung saya bulan ini berapa", "gimana sih keuangan saya",
   "rugi apa untung minggu ini", "omzet saya berapa", "laporan singkat",
   "rekap dong", "ringkasan keuangan").
+- "atur_resep" bila pengguna MENYATAKAN resep/cara membuat sebuah produk —
+  menyebut bahan-bahan yang dipakai untuk membuatnya ("resep risol: tepung
+  sekilo, minyak setengah liter, ayam setengah kilo, sekali bikin 10 kotak",
+  "bikin bolu pakai 4 telur, 1 kg tepung, jadi 20 potong", "cara buat kroket
+  ..."). Ini BUKAN uang berpindah — jadi bukan "catat_transaksi". Kata kunci:
+  "resep", "bikin ... pakai ...", "bahannya ...", "jadi ... porsi/kotak".
+- "lihat_transaksi" bila pengguna ingin MELIHAT KEMBALI daftar catatan yang
+  sudah masuk, satu per satu ("lihat catatan terakhir", "yang tadi udah kecatat
+  apa aja", "tampilkan transaksi", "coba lihat catatanku", "riwayat dong").
+  BEDAKAN dari "tanya_keuangan": "lihat_transaksi" minta DAFTAR ENTRI mentah
+  (baris demi baris); "tanya_keuangan" minta RINGKASAN/REKAP angka gabungan
+  (omzet, laba, untung). "lihat catatan" -> lihat_transaksi; "rekap untung
+  bulan ini" -> tanya_keuangan.
 
 PENTING — jangan minta detail tambahan:
 - Periode/tanggal TIDAK PERNAH kamu perlukan. Sistem di luar prompt ini sudah
@@ -215,9 +346,13 @@ PENTING — jangan minta detail tambahan:
   "jenis_laporan", atau semacamnya — skema hanya punya satu field: `aksi`).
 
 Hanya akui tidak yakin (`_gagal`) kalau kalimatnya benar-benar tidak cocok
-satu pun dari tiga label (sapaan, obrolan di luar topik) atau bisa dibaca
+satu pun dari enam label (sapaan, obrolan di luar topik) atau bisa dibaca
 mendua ANTARA dua label di atas. Ketiadaan detail seperti periode/tanggal
 BUKAN alasan untuk tidak yakin.
+
+Khusus ragu ANTARA "catat_transaksi" dan "koreksi_transaksi": pilih `_gagal`.
+Menebak "koreksi" untuk kalimat yang sebenarnya penjualan baru akan membatalkan
+catatan yang sudah benar — lebih baik mengaku tidak yakin.
 """.strip()
 
 

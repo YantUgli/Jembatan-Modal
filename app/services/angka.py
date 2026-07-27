@@ -29,14 +29,30 @@ def rupiah(x: Decimal) -> str:
     Sen dibuang bila nol — "Rp75.000,00" bukan cara orang menyebut uang di
     warung. Kalau ada sennya, tetap ditampilkan supaya tidak ada angka yang
     diam-diam hilang.
+
+    Nilai negatif ditulis '−Rp1.500', bukan 'Rp-1.500': tandanya di depan seluruh
+    jumlah, sebagaimana orang menuliskannya. Ini bukan soal selera — laba bersih
+    minus dan "biaya di luar HPP" yang negatif keduanya muncul di laporan yang
+    dibaca analis kredit, dan 'Rp-' di sana terbaca seperti salah cetak.
     """
     nilai = _uang(_dec(x))
+    tanda = "−" if nilai < 0 else ""
+    nilai = abs(nilai)
     utuh = int(nilai)
     teks = f"Rp{utuh:,}".replace(",", ".")
     sen = nilai - utuh
     if sen:
         teks += "," + f"{sen:.2f}"[2:]
-    return teks
+    return tanda + teks
+
+
+def persen(x) -> str:
+    """0..100 (Decimal) → '78%' / '78.5%'. Bukan uang, jadi bukan `rupiah()`.
+
+    Dipakai bersama kartu chat dan laporan PDF — cakupan HPP wajib berbunyi sama
+    di layar dan di dokumen (aturan #2).
+    """
+    return f"{_rapikan(_dec(x))}%"
 
 
 def _rapikan(x: Decimal) -> str:

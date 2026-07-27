@@ -57,6 +57,18 @@ def database_url() -> str:
     return f"sqlite:///{(DATA_DIR / 'jembatan.db').as_posix()}"
 
 
+def dokumen_dir() -> Path:
+    """Folder penyimpanan dokumen (laporan PDF, kelak proposal KUR).
+
+    Dev default: `data/dokumen` — ikut `data/` yang sudah ter-gitignore, jadi
+    dokumen keuangan pengguna tak pernah ikut ter-commit. Produksi: set
+    `DOKUMEN_DIR` ke volume di luar repo.
+    """
+    tujuan = Path(os.getenv("DOKUMEN_DIR", str(DATA_DIR / "dokumen")))
+    tujuan.mkdir(parents=True, exist_ok=True)
+    return tujuan
+
+
 # ── LLM ─────────────────────────────────────────────────────────────────────
 # Ketiga provider yang tersedia (Groq, Qwen, Fireworks) berbicara protokol yang
 # sama, jadi berpindah = mengganti tiga baris di `.env`, bukan mengganti kode.
@@ -74,3 +86,20 @@ def llm_model() -> str:
 
 def llm_api_key() -> str:
     return os.getenv("LLM_API_KEY", "")
+
+
+# ── Auth / sesi ─────────────────────────────────────────────────────────────
+
+
+def session_ttl_hari() -> int:
+    """Umur sesi login (hari). Default 30 — pemilik warung tak login tiap hari."""
+    try:
+        return int(os.getenv("SESSION_TTL_HARI", "30"))
+    except ValueError:
+        return 30
+
+
+def cookie_secure() -> bool:
+    """Set cookie sesi `Secure` (hanya HTTPS). Dev default False (http lokal);
+    produksi WAJIB `COOKIE_SECURE=1`. Dibaca oleh BFF lewat env yang sama."""
+    return os.getenv("COOKIE_SECURE", "").lower() in {"1", "true", "yes"}

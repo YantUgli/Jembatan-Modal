@@ -15,9 +15,9 @@ from datetime import date
 
 from app.llm.kontrak import AdapterLLM, Ekstraksi, Gagal
 from app.llm.penjaga import periksa_nominal
-from app.llm.skema import HasilCatat, instruksi_catat
+from app.llm.skema import HasilCatat, HasilResep, instruksi_catat, instruksi_resep
 
-__all__ = ["ekstrak_transaksi"]
+__all__ = ["ekstrak_resep", "ekstrak_transaksi"]
 
 
 def ekstrak_transaksi(
@@ -44,3 +44,17 @@ def ekstrak_transaksi(
         )
 
     return hasil
+
+
+def ekstrak_resep(
+    adapter: AdapterLLM, teks: str, hari_ini: date
+) -> Ekstraksi[HasilResep] | Gagal:
+    """Ubah kalimat resep pemilik jadi resep terstruktur.
+
+    ⛔ Tanpa penjaga `periksa_nominal` — dan itu disengaja, bukan kelalaian:
+    skema resep **bebas-uang** (hanya bahan + takaran). Tidak ada nominal yang
+    bisa dikarang model, jadi tak ada yang perlu dijaga di sini. Harga bahan
+    masuk lewat jalur lain (pembelian / jawaban harga), yang punya penjaganya
+    sendiri.
+    """
+    return adapter.ekstrak(instruksi_resep(hari_ini), teks, HasilResep)

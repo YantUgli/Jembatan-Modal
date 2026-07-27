@@ -14,18 +14,26 @@ di sini difilter olehnya — input pengguna dianggap tak tepercaya.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.impor import MAKS_BARIS, TerlaluBanyakBaris, tampak_tempelan
 from app.kanal.kontrak import (
+    BarisImpor,
     BarisKonfirmasi,
     BarisPos,
+    BarisRingkas,
     BarisUntung,
+    KartuDokumen,
+    KartuImpor,
     KartuKeuangan,
     KartuKlarifikasi,
     KartuKonfirmasi,
+    KartuResep,
+    KartuRiwayat,
     KartuSapaan,
     KartuUntung,
     PesanKeluar,
@@ -34,8 +42,12 @@ from app.kanal.kontrak import (
 from app.llm.kontrak import AdapterLLM
 from app.llm.skema import AksiKoreksi, AksiRouter, Koreksi
 from app.models import Business, JenisTransaksi, Transaction
-from app.services.angka import _dec, _rapikan, _uang, rupiah
-from app.services.catat import terapkan_koreksi
+from app.services.angka import _dec, _uang, persen as _persen, rupiah
+from app.services.catat import (
+    daftar_transaksi_periode,
+    daftar_transaksi_terakhir,
+    terapkan_koreksi,
+)
 from app.services.hpp import (
     HasilHpp,
     KonteksHarga,
@@ -43,16 +55,68 @@ from app.services.hpp import (
     cakupan_hpp,
     hitung_hpp_semua,
 )
+from app.services.impor import (
+    BarisTinjau,
+    RingkasanTinjau,
+    konfirmasi_impor,
+    putuskan_baris,
+    terima_yakin,
+    tinjau_impor,
+)
 from app.services.laba import hitung_laba_periode
-from app.tools import Klarifikasi, Tercatat, catat_transaksi, pilih_aksi
+from app.services.periode import Periode, baca_periode, menyebut_masa_depan
+from app.services.resep import HasilAturResep
+from app.services.tanggal import periode_tampil as _periode
+from app.services.tanggal import tgl_pendek as _tgl_pendek
+from app.tools import (
+    Klarifikasi,
+    Tercatat,
+    Terkoreksi,
+    atur_resep_dari_teks,
+    buat_laporan,
+    catat_transaksi,
+    impor_dari_teks,
+    jawab_harga_bahan,
+    koreksi_transaksi,
+    pilih_aksi,
+)
 
 __all__ = [
+    "KonteksTunggu",
     "tangani_pesan",
     "koreksi_kategori",
     "sapaan",
     "kartu_untung",
     "kartu_keuangan",
+    "kartu_laporan",
+    "kartu_riwayat",
+    "kartu_impor_teks",
+    "kartu_impor_tinjau",
+    "kartu_impor_putuskan",
+    "kartu_impor_terima_yakin",
+    "kartu_impor_konfirmasi",
 ]
+
+
+@dataclass
+class KonteksTunggu:
+    """Token kelanjutan yang dibawa klien — server tetap stateless.
+
+    Dua jenis sejauh ini:
+    - `"harga_bahan"` — jawaban atas "Harga X berapa?" (lihat `KartuResep.menunggu`);
+      memakai `product_id` + `bahan`.
+    - `"koreksi_sasaran"` — pengguna menunjuk baris tertentu di kartu riwayat
+      ("Betulkan") lalu mengetik apa yang benar; memakai `transaksi_id`.
+
+    ⛔ **Tak tepercaya** (aturan #6): id di sini berasal dari klien dan **wajib**
+    divalidasi ulang milik `business_id` di query — dilakukan di
+    `jawab_harga_bahan` / `koreksi_transaksi`, bukan diandaikan benar di sini.
+    """
+
+    jenis: str  # "harga_bahan" | "koreksi_sasaran"
+    product_id: int | None = None
+    bahan: str | None = None
+    transaksi_id: int | None = None
 
 # Badge jenis pada kartu (bahasa warung, bukan istilah akuntansi).
 _JENIS_LABEL = {
@@ -80,23 +144,111 @@ def tangani_pesan(
     business_id: int,
     teks: str,
     hari_ini: date,
+    konteks: KonteksTunggu | None = None,
 ) -> PesanKeluar:
     """Satu kalimat pengguna → kartu.
 
-    Diarahkan dulu lewat `pilih_aksi` (klasifikasi enum tertutup, bukan
+    Bila ada `konteks` tanya-jawab harga (klien menjawab "Harga X berapa?"),
+    pesan dicoba dibaca sebagai **jawaban harga** dulu; berhasil → `KartuResep`
+    dengan modal ter-update (atau bahan berikutnya yang ditanya). Bila pesannya
+    ternyata bukan harga (pengguna ganti topik), ia **jatuh** ke alur normal —
+    tak terjebak menunggu.
+
+    Bila `konteks` menunjuk baris tertentu ("Betulkan" di kartu riwayat), pesan
+    dibaca sebagai **koreksi atas baris itu**; tak terbaca sebagai koreksi → ikut
+    jatuh ke alur normal.
+
+    **Tempelan banyak baris dibelokkan ke jalur draft impor** sebelum router
+    dipanggil — lihat `_tempelan_ke_draft`.
+
+    Alur normal diarahkan lewat `pilih_aksi` (klasifikasi enum tertutup, bukan
     tool-calling — lihat docstring modul). `tanya_hpp` belum punya rute sendiri:
     dipetakan ke `kartu_untung` (margin per produk) sampai ada kartu HPP yang
     kontraknya benar-benar beda. Tak yakin/tak cocok → default pencatatan
     (Pilar 1), sama seperti perilaku sebelum router ini ada.
     """
-    aksi = pilih_aksi(adapter, teks)
-    if aksi is AksiRouter.tanya_untung:
-        mulai, selesai = _periode_bulan_berjalan(hari_ini)
-        return kartu_untung(session, business_id, mulai, selesai)
-    if aksi is AksiRouter.tanya_keuangan:
-        mulai, selesai = _periode_bulan_berjalan(hari_ini)
-        return kartu_keuangan(session, business_id, mulai, selesai)
+    if konteks is not None and konteks.jenis == "harga_bahan":
+        if konteks.product_id is not None and konteks.bahan:
+            dijawab = jawab_harga_bahan(
+                session, adapter, business_id, konteks.product_id, konteks.bahan, teks, hari_ini
+            )
+            if dijawab is not None:
+                return PesanKeluar([_kartu_resep(dijawab)])
+        # Bukan jawaban harga → teruskan ke alur normal (tak terjebak).
 
+    # Sasaran koreksi yang ditunjuk pengguna. Dicoba lebih dulu daripada router:
+    # niatnya sudah eksplisit (ia mengetuk "Betulkan"), jadi kalimat sependek
+    # "57rb" pun bermakna di sini padahal tak berarti apa-apa bagi router.
+    tertunda: Klarifikasi | None = None
+    if konteks is not None and konteks.jenis == "koreksi_sasaran" and konteks.transaksi_id:
+        # Aturan #6: id dari klien divalidasi di query sebelum satu pun panggilan
+        # model. Sasaran asing/sudah batal → berhenti di sini, jangan jatuh ke
+        # alur normal — kalimat koreksi tak boleh berubah jadi catatan baru.
+        sasaran = _ambil_milik(session, business_id, konteks.transaksi_id)
+        if sasaran is None:
+            return PesanKeluar(
+                [
+                    KartuKlarifikasi(
+                        pertanyaan="Catatan itu tidak ketemu — mungkin sudah dibetulkan."
+                    )
+                ]
+            )
+        dikoreksi = koreksi_transaksi(session, adapter, business_id, teks, hari_ini, sasaran.id)
+        if not isinstance(dikoreksi, Klarifikasi):
+            return PesanKeluar([_kartu_koreksi(session, business_id, dikoreksi)])
+        # Tak terbaca sebagai koreksi → alur normal (tak terjebak). Pertanyaan
+        # baliknya disimpan supaya tidak memanggil model dua kali untuk hal sama.
+        tertunda = dikoreksi
+
+    # ⛔ Aturan #3, dan pagarnya harus berdiri DI SINI. Kotak chat adalah tempat
+    # tempelan benar-benar terjadi: seseorang menempel satu halaman buku tulis
+    # dari WhatsApp, router mengklasifikasinya `catat_transaksi`, lalu
+    # `simpan_transaksi` menuliskan tiga puluh baris langsung ke buku. Itu impor
+    # yang auto-commit tanpa pernah disebut impor — larangan yang hidup hanya di
+    # tool `impor` akan dilewati begitu saja lewat pintu ini.
+    if tampak_tempelan(teks):
+        return _tempelan_ke_draft(session, adapter, business_id, teks, hari_ini)
+
+    aksi = pilih_aksi(adapter, teks)
+
+    # Periode dibaca **setelah** router, dan hanya untuk kalimat pertanyaan.
+    # ⛔ Jangan pernah menariknya ke atas: di jalur pencatatan tanggal adalah
+    # ISI transaksi ("kemarin jual bakso 400rb") dan sudah diurus ekstraksi —
+    # membacanya sebagai kueri periode akan mengubah catatan jadi pertanyaan.
+    if aksi in _AKSI_BERPERIODE:
+        if menyebut_masa_depan(teks, hari_ini):
+            return PesanKeluar([KartuKlarifikasi(pertanyaan=_TANYA_MASA_DEPAN)])
+        p = baca_periode(teks, hari_ini)
+        if aksi is AksiRouter.lihat_transaksi:
+            return kartu_riwayat(session, business_id, periode=p)
+        mulai, selesai = (p.mulai, p.selesai) if p else _periode_bulan_berjalan(hari_ini)
+        label = p.label if p else "bulan_ini"
+        if aksi is AksiRouter.tanya_untung:
+            return kartu_untung(session, business_id, mulai, selesai, label=label)
+        return kartu_keuangan(session, business_id, mulai, selesai, label=label)
+
+    if aksi is AksiRouter.koreksi_transaksi:
+        if tertunda is not None:
+            return PesanKeluar(
+                [KartuKlarifikasi(pertanyaan=tertunda.pertanyaan, yang_kurang=tertunda.yang_kurang)]
+            )
+        dikoreksi = koreksi_transaksi(session, adapter, business_id, teks, hari_ini)
+        if isinstance(dikoreksi, Klarifikasi):
+            return PesanKeluar(
+                [
+                    KartuKlarifikasi(
+                        pertanyaan=dikoreksi.pertanyaan, yang_kurang=dikoreksi.yang_kurang
+                    )
+                ]
+            )
+        return PesanKeluar([_kartu_koreksi(session, business_id, dikoreksi)])
+    if aksi is AksiRouter.atur_resep:
+        hasil_resep = atur_resep_dari_teks(session, adapter, business_id, teks, hari_ini)
+        if isinstance(hasil_resep, Klarifikasi):
+            return PesanKeluar(
+                [KartuKlarifikasi(pertanyaan=hasil_resep.pertanyaan, yang_kurang=hasil_resep.yang_kurang)]
+            )
+        return PesanKeluar([_kartu_resep(hasil_resep)])
     hasil = catat_transaksi(session, adapter, business_id, teks, hari_ini)
     if isinstance(hasil, Klarifikasi):
         return PesanKeluar(
@@ -109,6 +261,20 @@ def _periode_bulan_berjalan(hari_ini: date) -> tuple[date, date]:
     """Awal bulan berjalan s/d hari ini — default yang sama dengan jalur chip
     (`_periode` di app/api/main.py) saat `mulai`/`selesai` tak disebut."""
     return hari_ini.replace(day=1), hari_ini
+
+
+# Tiga jalur yang menjawab **pertanyaan** — satu-satunya tempat periode boleh
+# dibaca dari kalimat.
+_AKSI_BERPERIODE = frozenset(
+    {AksiRouter.tanya_untung, AksiRouter.tanya_keuangan, AksiRouter.lihat_transaksi}
+)
+
+# Kartu berisi nol untuk hari yang belum terjadi tampak seperti hasil hitungan,
+# padahal tak ada yang dihitung — jadi bertanya balik, bukan menjawab (aturan #2).
+_TANYA_MASA_DEPAN = (
+    "Hari itu belum terjadi, jadi catatannya belum ada. "
+    "Mau saya tampilkan bulan ini, bulan lalu, atau 3 bulan terakhir?"
+)
 
 
 def koreksi_kategori(
@@ -155,6 +321,7 @@ def koreksi_kategori(
                 baris=[_baris(pengganti)],
                 ids=[pengganti.id],
                 konfirmasi=terap.konfirmasi,
+                dibatalkan_id=lama.id,
             )
         ]
     )
@@ -199,11 +366,6 @@ _SEBAB_HPP = {
 }
 
 
-def _persen(d) -> str:
-    """0..100 (Decimal) → '78%' / '78.5%'. Bukan uang, jadi bukan rupiah()."""
-    return f"{_rapikan(_dec(d))}%"
-
-
 def _baris_untung(h: HasilHpp) -> BarisUntung:
     """`HasilHpp` service → baris kartu. Angka apa adanya; None tetap None.
 
@@ -242,6 +404,7 @@ def kartu_untung(
     mulai: date,
     selesai: date,
     konteks: KonteksHarga | None = None,
+    label: str = "",
 ) -> PesanKeluar:
     """Laba kotor **dari bahan** per porsi, per produk (Pilar 4).
 
@@ -249,8 +412,16 @@ def kartu_untung(
     keduanya tidak pernah dilebur. `cakupan` (aturan #2) menyertakan berapa persen
     penjualan yang modalnya sudah terhitung. Angka datang dari service HPP; kanal
     tidak berhitung.
+
+    Tanpa `konteks`, harga jual yang dipakai adalah harga yang berlaku di
+    **akhir periode**, bukan hari ini. `harga_jual_berlaku` jatuh ke `today()`
+    bila tanggalnya kosong — jadi sebelum ini "untung bulan Juni" dihitung
+    dengan harga jual hari ini, persis kelas kesalahan yang tabel
+    `product_prices` (append-only, `berlaku_dari`) dibangun untuk mencegah.
+    Konsekuensi jujurnya: produk yang harganya baru tercatat setelah periode itu
+    jadi `belum_diketahui` untuk periode lampau — memang belum diketahui.
     """
-    hasil = hitung_hpp_semua(session, business_id, konteks)
+    hasil = hitung_hpp_semua(session, business_id, konteks or KonteksHarga(tanggal=selesai))
     cak = cakupan_hpp(session, business_id, mulai, selesai)
     baris = [_baris_untung(h) for h in hasil]
 
@@ -283,6 +454,8 @@ def kartu_untung(
         [
             KartuUntung(
                 pesan=pesan,
+                periode_tampil=_periode(mulai, selesai),
+                periode_label=label,
                 produk=baris,
                 cakupan_tampil=_persen(cak.persen) if cak.omzet_total > 0 else "",
                 status=status,
@@ -291,7 +464,9 @@ def kartu_untung(
     )
 
 
-def kartu_keuangan(session: Session, business_id: int, mulai: date, selesai: date) -> PesanKeluar:
+def kartu_keuangan(
+    session: Session, business_id: int, mulai: date, selesai: date, label: str = ""
+) -> PesanKeluar:
     """Untung usaha periode — **angka utama** (aturan #9, keputusan "dua angka").
 
     Omzet − (belanja + operasional) = laba bersih; prive dikecualikan. Angka dari
@@ -308,9 +483,12 @@ def kartu_keuangan(session: Session, business_id: int, mulai: date, selesai: dat
         catatan.append(f"Belum ada catatan untuk {_periode(mulai, selesai)}.")
     else:
         # Terjemahan "basis kas" ke bahasa warung — jangan pakai jargonnya.
+        # Kalimat ini dulu berbunyi "bulan ini" — benar selama kartu cuma bisa
+        # menampilkan bulan berjalan. Begitu periodenya bisa apa saja, "bulan ini"
+        # jadi keterangan yang salah tentang angka di sebelahnya.
         catatan.append(
             "Hitungan ini apa adanya dari catatan: kalau ada belanja yang barangnya "
-            "baru laku bulan depan, tetap ikut kehitung bulan ini."
+            "baru laku belakangan, tetap ikut kehitung di periode ini."
         )
     if laba.prive > 0:
         catatan.append(
@@ -318,12 +496,13 @@ def kartu_keuangan(session: Session, business_id: int, mulai: date, selesai: dat
             "biaya usaha — dicatat terpisah."
         )
     if laba.laba_bersih < 0:
-        catatan.append("Bulan ini pengeluaran lebih besar daripada pemasukan.")
+        catatan.append("Di periode ini pengeluaran lebih besar daripada pemasukan.")
 
     return PesanKeluar(
         [
             KartuKeuangan(
                 periode_tampil=_periode(mulai, selesai),
+                periode_label=label,
                 omzet_tampil=rupiah(laba.omzet),
                 belanja_tampil=rupiah(laba.belanja),
                 operasional_tampil=rupiah(laba.operasional),
@@ -350,20 +529,302 @@ def kartu_keuangan(session: Session, business_id: int, mulai: date, selesai: dat
     )
 
 
-_BULAN = ["", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+def kartu_laporan(
+    session: Session,
+    business: Business,
+    hari_ini: date,
+    mulai: date | None = None,
+    selesai: date | None = None,
+) -> PesanKeluar:
+    """Buat laporan PDF → kartu tanda terima berisi tautan unduh (Pilar 3).
+
+    Dijangkau lewat **aksi terstruktur** (tombol), bukan label router. Membuat
+    dokumen adalah tindakan sengaja, bukan pertanyaan sambil lalu — dan kalimat
+    seperti *"laporan singkat dong"* sudah lama berarti `tanya_keuangan`
+    (kartu di layar). Menambahkan label router yang bersaing dengannya akan
+    membuat pengguna kadang dapat PDF saat ia cuma ingin melihat angka.
+
+    ⛔ Kartu ini tak pernah memuat skor komposit (aturan #9), dan **selalu**
+    menyebut cakupan HPP (aturan #2) — pengguna tahu seberapa dalam angka yang
+    akan dibaca penyalur sebelum membuka berkasnya.
+    """
+    hasil = buat_laporan(session, business, hari_ini, mulai=mulai, selesai=selesai)
+    r = hasil.ringkasan
+    ringkasan = [
+        BarisRingkas(label="Omzet", nilai_tampil=rupiah(r.total.omzet)),
+        BarisRingkas(label="Untung usaha", nilai_tampil=rupiah(r.total.laba_bersih)),
+        BarisRingkas(
+            label="Modal bahan terhitung",
+            nilai_tampil=(
+                _persen(r.cakupan.persen) if r.cakupan.omzet_total > 0 else "belum diketahui"
+            ),
+        ),
+        BarisRingkas(label="Bulan tercatat", nilai_tampil=f"{r.fakta.bulan_bercatatan} bulan"),
+    ]
+    return PesanKeluar(
+        [
+            KartuDokumen(
+                judul="Laporan keuangan",
+                periode_tampil=r.periode_tampil,
+                url_unduh=f"/api/dokumen/{hasil.document_id}",
+                pesan=(
+                    "Laporan Ibu sudah jadi. Isinya catatan apa adanya: omzet, "
+                    "biaya, untung usaha, dan seberapa banyak modal bahan yang "
+                    "sudah ketahuan."
+                ),
+                ringkasan=ringkasan,
+                catatan=[
+                    "Ini alat bantu persiapan, bukan jaminan pinjaman disetujui.",
+                    "Angka yang belum ketahuan tidak saya karang — di laporan pun "
+                    "ditulis apa adanya.",
+                ],
+            )
+        ]
+    )
 
 
-def _periode(mulai: date, selesai: date) -> str:
-    """'1–21 Jul 2026', atau '18 Mei–21 Jul 2026' bila beda bulan."""
-    if mulai.year == selesai.year and mulai.month == selesai.month:
-        return f"{mulai.day}–{selesai.day} {_BULAN[selesai.month]} {selesai.year}"
-    kiri = f"{mulai.day} {_BULAN[mulai.month]}"
-    if mulai.year != selesai.year:
-        kiri += f" {mulai.year}"
-    return f"{kiri}–{selesai.day} {_BULAN[selesai.month]} {selesai.year}"
+def kartu_riwayat(
+    session: Session, business_id: int, batas: int = 5, periode: Periode | None = None
+) -> PesanKeluar:
+    """Daftar `batas` catatan terakhir — jalur baca "lihat transaksi terakhir".
+
+    Deterministik, tanpa LLM: router sudah mengklasifikasi intent; di sini murni
+    baca (difilter `business_id` di query, aturan #6) lalu format tiap baris
+    lewat `_baris` (yang dipakai bersama kartu konfirmasi). Kosong → pesan jujur,
+    bukan baris karangan (aturan #2). Baris membawa `transaksi_id` + chip
+    kategori → bisa dibetulkan di tempat lewat `koreksi_kategori`.
+
+    `periode=None` sengaja berarti **tak berfilter**, bukan "bulan berjalan":
+    memfilter secara diam-diam akan menyembunyikan baris yang selama ini
+    terlihat, dan pengguna tak punya cara tahu ada yang hilang.
+    """
+    if periode is None:
+        rows = daftar_transaksi_terakhir(session, business_id, batas)
+    else:
+        rows = daftar_transaksi_periode(
+            session, business_id, periode.mulai, periode.selesai, batas
+        )
+    baris = [_baris(t) for t in rows]
+    tampil = _periode(periode.mulai, periode.selesai) if periode else ""
+
+    if not baris:
+        pesan = (
+            f"Belum ada catatan di {tampil}."
+            if periode
+            else "Belum ada catatan yang bisa ditampilkan. Begitu Ibu catat sesuatu, "
+            "nanti muncul di sini."
+        )
+    else:
+        pesan = "Ini catatan terakhir Ibu. Ketuk kategori kalau ada yang perlu dibetulkan."
+
+    return PesanKeluar(
+        [
+            KartuRiwayat(
+                baris=baris,
+                judul=f"Catatan {periode.sebutan.lower()}" if periode else "Catatan terakhir",
+                pesan=pesan,
+                periode_tampil=tampil,
+                periode_label=periode.label if periode else "",
+            )
+        ]
+    )
+
+
+# ── Impor (Pilar 2) ─────────────────────────────────────────────────────────
+# Semua rute di bawah ini hanya membaca/menandai draft. Satu-satunya yang
+# menyentuh `transactions` adalah `kartu_impor_konfirmasi`, dan ia meneruskan ke
+# `konfirmasi_impor` yang cuma memindahkan baris bercentang (aturan #3).
+
+
+def _tempelan_ke_draft(
+    session: Session,
+    adapter: AdapterLLM,
+    business_id: int,
+    teks: str,
+    hari_ini: date,
+) -> PesanKeluar:
+    """Tempelan banyak baris → draft impor, bukan pencatatan langsung."""
+    try:
+        return kartu_impor_teks(session, adapter, business_id, teks, hari_ini)
+    except TerlaluBanyakBaris:
+        return PesanKeluar(
+            [
+                KartuKlarifikasi(
+                    pertanyaan=(
+                        f"Catatannya panjang sekali — sekali kirim maksimal {MAKS_BARIS} "
+                        "baris supaya masih enak diperiksa di HP. Boleh dikirim "
+                        "sebagian dulu?"
+                    ),
+                    yang_kurang=["jumlah_baris"],
+                )
+            ]
+        )
+
+
+def kartu_impor_teks(
+    session: Session,
+    adapter: AdapterLLM,
+    business_id: int,
+    teks: str,
+    hari_ini: date,
+) -> PesanKeluar:
+    """Baca tempelan → kartu peninjau. ⛔ Nol transaksi tertulis."""
+    hasil = impor_dari_teks(session, adapter, business_id, teks, hari_ini)
+    return PesanKeluar([_kartu_impor(hasil.tinjau)])
+
+
+def kartu_impor_tinjau(session: Session, business_id: int, import_id: int) -> PesanKeluar:
+    return _bungkus_impor(tinjau_impor(session, business_id, import_id))
+
+
+def kartu_impor_putuskan(
+    session: Session, business_id: int, import_id: int, row_id: int, terima: bool
+) -> PesanKeluar:
+    """Centang/hapus centang satu baris, lalu gambar ulang kartunya."""
+    return _bungkus_impor(putuskan_baris(session, business_id, import_id, row_id, terima))
+
+
+def kartu_impor_terima_yakin(
+    session: Session, business_id: int, import_id: int
+) -> PesanKeluar:
+    return _bungkus_impor(terima_yakin(session, business_id, import_id))
+
+
+def kartu_impor_konfirmasi(
+    session: Session, business_id: int, import_id: int
+) -> PesanKeluar:
+    """Simpan baris bercentang ke buku — satu-satunya pintu draft → transaksi."""
+    return _bungkus_impor(konfirmasi_impor(session, business_id, import_id))
+
+
+def _bungkus_impor(ringkas: RingkasanTinjau | None) -> PesanKeluar:
+    """Draft tak ditemukan → kalimat jujur, bukan kartu kosong yang membingungkan.
+
+    Aturan #6: service mengembalikan `None` untuk `import_id` milik usaha lain
+    **maupun** yang tak ada — dua hal itu memang sengaja tak dibedakan di sini.
+    """
+    if ringkas is None:
+        return PesanKeluar(
+            [
+                KartuKlarifikasi(
+                    pertanyaan="Catatan yang mau ditinjau tidak ketemu. Coba kirim ulang catatannya ya."
+                )
+            ]
+        )
+    return PesanKeluar([_kartu_impor(ringkas)])
+
+
+def _kartu_impor(r: RingkasanTinjau) -> KartuImpor:
+    """`RingkasanTinjau` → kartu. Tanpa aritmatika (aturan #1): jumlah dihitung
+    service, di sini hanya diformat dan dipilih katanya.
+    """
+    # Keadaan campur (sebagian sudah masuk, sebagian masih menunggu) harus punya
+    # kalimatnya sendiri. Menjatuhkannya ke kalimat "belum ada yang masuk buku"
+    # akan membuat kartu berbohong tentang apa yang sudah terjadi pada uang
+    # pengguna — dan itu kelas kesalahan yang sama dengan mengarang angka.
+    if r.jumlah_tersimpan and (r.jumlah_menunggu or r.jumlah_diterima):
+        pesan = (
+            f"Sudah masuk buku: {r.jumlah_tersimpan} catatan. "
+            f"Masih ada {r.jumlah_menunggu + r.jumlah_diterima} baris yang belum "
+            "tersimpan — periksa sisanya kalau mau dilanjutkan."
+        )
+    elif r.jumlah_tersimpan:
+        pesan = (
+            f"Sudah masuk buku: {r.jumlah_tersimpan} catatan. Kalau ada yang keliru, "
+            "Ibu masih bisa membetulkannya lewat 'lihat catatan terakhir'."
+        )
+    elif r.jumlah_terbaca == 0:
+        pesan = (
+            "Belum ada baris yang terbaca sebagai catatan uang. Tidak ada yang saya "
+            "simpan — boleh dikirim ulang dengan nominalnya ditulis?"
+        )
+    else:
+        pesan = (
+            f"Saya baca {r.jumlah_terbaca} catatan dari kiriman Ibu. "
+            "Belum ada yang masuk buku — periksa dulu, centang yang benar, "
+            "baru saya simpan."
+        )
+
+    catatan: list[str] = []
+    if r.jumlah_ragu:
+        catatan.append(
+            f"{r.jumlah_ragu} baris tanggalnya tidak tertulis, jadi saya tandai. "
+            "Tanggal yang keliru memindahkan untung ke bulan yang salah — "
+            "itu sebabnya baris ini tidak ikut tercentang borongan."
+        )
+    if r.jumlah_gagal:
+        catatan.append(
+            f"{r.jumlah_gagal} baris tidak terbaca sebagai catatan uang. Saya biarkan "
+            "tetap tampil supaya Ibu tahu, bukan saya buang diam-diam."
+        )
+    if not r.selesai:
+        catatan.append("Tidak ada yang masuk buku sebelum Ibu menekan simpan.")
+
+    return KartuImpor(
+        import_id=r.import_id,
+        judul="Periksa dulu sebelum disimpan",
+        pesan=pesan,
+        baris=[_baris_impor(b) for b in r.baris],
+        jumlah=r.jumlah,
+        jumlah_terbaca=r.jumlah_terbaca,
+        jumlah_ragu=r.jumlah_ragu,
+        jumlah_gagal=r.jumlah_gagal,
+        jumlah_diterima=r.jumlah_diterima,
+        jumlah_tersimpan=r.jumlah_tersimpan,
+        jumlah_menunggu=r.jumlah_menunggu,
+        selesai=r.selesai,
+        catatan=catatan,
+    )
+
+
+def _baris_impor(b: BarisTinjau) -> BarisImpor:
+    return BarisImpor(
+        row_id=b.row_id,
+        raw=b.raw,
+        status=b.status,
+        terbaca=b.terbaca,
+        ragu=b.ragu,
+        tersimpan=b.transaksi_id is not None,
+        catatan=b.catatan,
+        yang_kurang=list(b.yang_kurang),
+        jenis=b.jenis.value if b.jenis is not None else None,
+        jenis_label=_JENIS_LABEL[b.jenis] if b.jenis is not None else None,
+        nominal_tampil=rupiah(b.nominal) if b.nominal is not None else None,
+        tanggal_tampil=_tgl_pendek(b.tanggal) if b.tanggal is not None else None,
+        produk=b.produk,
+        qty_tampil=_qty_teks(b.qty, b.satuan),
+    )
 
 
 # ── Pembangun kartu ──────────────────────────────────────────────────────────
+
+
+def _kartu_resep(hasil: HasilAturResep) -> KartuResep:
+    """`HasilAturResep` service → kartu resep. Angka apa adanya (aturan #1) —
+    tak ada aritmatika di sini; HPP sudah dihitung service.
+
+    Bila masih ada bahan tanpa harga, `menunggu` menyimpan bahan **berikutnya**
+    yang ditanya (satu per giliran) sebagai token kelanjutan; klien
+    melampirkannya ke pesan jawaban. `product_id` di token divalidasi ulang
+    server saat jawaban datang (aturan #6).
+    """
+    hpp = hasil.hpp
+    lengkap = hpp.status is StatusHpp.lengkap and hpp.hpp_per_unit is not None
+    menunggu = (
+        {"product_id": hasil.product_id, "bahan": hasil.bahan_perlu_harga[0]}
+        if not lengkap and hasil.bahan_perlu_harga
+        else None
+    )
+    return KartuResep(
+        product_id=hasil.product_id,
+        nama=hasil.nama,
+        status="lengkap" if lengkap else "belum",
+        konfirmasi=hasil.konfirmasi,
+        modal_tampil=rupiah(hpp.hpp_per_unit) if lengkap else None,
+        satuan_hpp=hpp.satuan_hpp,
+        bahan_perlu_harga=list(hasil.bahan_perlu_harga),
+        menunggu=menunggu,
+    )
 
 
 def _kartu_konfirmasi(session: Session, business_id: int, hasil: Tercatat) -> KartuKonfirmasi:
@@ -383,6 +844,27 @@ def _kartu_konfirmasi(session: Session, business_id: int, hasil: Tercatat) -> Ka
     return KartuKonfirmasi(baris=baris, ids=hasil.ids, konfirmasi=hasil.konfirmasi)
 
 
+def _kartu_koreksi(session: Session, business_id: int, hasil: Terkoreksi) -> KartuKonfirmasi:
+    """Hasil koreksi → kartu konfirmasi (bentuk yang sama dengan pencatatan).
+
+    Buku append-only (keputusan.md 2026-07-20): `dibatalkan_id` adalah baris lama
+    yang ditandai batal, `baris` adalah penggantinya. Aksi `batal` tidak punya
+    pengganti → `baris` kosong; kartu tetap dibuat supaya pengguna melihat baris
+    mana yang hilang, bukan diam-diam.
+    """
+    pengganti = (
+        _ambil_milik(session, business_id, hasil.id_pengganti)
+        if hasil.id_pengganti is not None
+        else None
+    )
+    return KartuKonfirmasi(
+        baris=[_baris(pengganti)] if pengganti is not None else [],
+        ids=[pengganti.id] if pengganti is not None else [],
+        konfirmasi=hasil.konfirmasi,
+        dibatalkan_id=hasil.id_dibatalkan,
+    )
+
+
 def _baris(t: Transaction) -> BarisKonfirmasi:
     return BarisKonfirmasi(
         jenis=t.jenis.value,
@@ -396,18 +878,28 @@ def _baris(t: Transaction) -> BarisKonfirmasi:
             PilihanKategori(nilai=j.value, label=label, aktif=(t.jenis is j))
             for j, label in _KATEGORI
         ],
+        tanggal_tampil=_tgl_pendek(t.tanggal),
     )
 
 
 def _qty_tampil(t: Transaction) -> str | None:
-    """'5 kotak' dari qty+satuan; None bila takaran tak dicatat."""
-    if t.qty is None:
+    """'5 kotak' dari baris tersimpan; None bila takaran tak dicatat."""
+    return _qty_teks(t.qty, t.satuan)
+
+
+def _qty_teks(qty, satuan: str | None) -> str | None:
+    """'5 kotak' dari qty+satuan mana pun (baris tersimpan maupun draft impor).
+
+    Dipakai bersama supaya takaran tidak berbunyi berbeda antara kartu
+    konfirmasi dan kartu peninjau impor — pengguna melihat baris yang sama dua
+    kali, sebelum dan sesudah disimpan.
+    """
+    if qty is None:
         return None
-    d = _dec(t.qty).normalize()
+    d = _dec(qty).normalize()
     if d == d.to_integral_value():
         d = d.to_integral_value()
-    angka = f"{d:f}"
-    return " ".join(x for x in (angka, t.satuan) if x)
+    return " ".join(x for x in (f"{d:f}", satuan) if x)
 
 
 def _ambil_milik(session: Session, business_id: int, transaksi_id: int) -> Transaction | None:

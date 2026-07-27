@@ -29,6 +29,7 @@ from app.models.entities import (
     Recipe,
     RecipeItem,
     ScoreSnapshot,
+    Sesi,
     Transaction,
     User,
 )
@@ -55,6 +56,7 @@ __all__ = [
     "Recipe",
     "RecipeItem",
     "ScoreSnapshot",
+    "Sesi",
     "StatusBarisImpor",
     "StatusImpor",
     "SumberHarga",

@@ -26,7 +26,7 @@ from dataclasses import asdict, dataclass, field
 
 from enum import Enum
 
-VERSI_KONTRAK = 2
+VERSI_KONTRAK = 8
 
 
 class TipeKartu(str, Enum):
@@ -36,6 +36,10 @@ class TipeKartu(str, Enum):
     klarifikasi = "klarifikasi"
     untung = "untung"
     keuangan = "keuangan"
+    resep = "resep"
+    riwayat = "riwayat"
+    dokumen = "dokumen"
+    impor = "impor"
     belum_diketahui = "belum_diketahui"
 
 
@@ -107,6 +111,9 @@ class BarisKonfirmasi:
     qty_tampil: str | None = None  # "5 kotak"
     transaksi_id: int | None = None
     kategori_pilihan: list[PilihanKategori] = field(default_factory=list)
+    # Diisi hanya di kartu riwayat (baris lintas hari perlu tanggal); kartu
+    # konfirmasi "baru saja" membiarkannya None.
+    tanggal_tampil: str | None = None  # "24 Jul"
 
 
 @dataclass
@@ -120,6 +127,11 @@ class KartuKonfirmasi:
     baris: list[BarisKonfirmasi]
     ids: list[int]
     konfirmasi: str
+    # Jalur koreksi (buku append-only): baris lama yang ditandai batal. Kanal
+    # memakainya untuk mengganti/menghapus baris itu di kartu riwayat yang sudah
+    # tergambar — tanpa ini, catatan yang sudah dibetulkan tetap terlihat hidup
+    # di layar. `baris` kosong + `dibatalkan_id` terisi = dihapus tanpa pengganti.
+    dibatalkan_id: int | None = None
     teks_alt: str = ""
     tipe: str = TipeKartu.konfirmasi.value
 
@@ -171,12 +183,21 @@ class KartuUntung:
     bersih usaha adalah angka lain (kartu keuangan), dan dua angka itu tidak
     pernah dilebur. `pesan` membawa kualifikasi itu; `cakupan_tampil` menampilkan
     berapa persen penjualan yang modalnya sudah terhitung (aturan #2).
+
+    `periode_tampil` **wajib**. Sampai VERSI 7 kartu ini memasang `cakupan_tampil`
+    — persentase yang cuma bermakna untuk satu rentang tanggal — tanpa pernah
+    menyebut rentangnya, dan harga jual yang dipakai pun mengikuti periode.
+    Angka tanpa konteksnya adalah setengah angka; ini perluasan aturan #2 dari
+    *nilai* ke *konteks*. `periode_label` = bentuk mesin periode yang sama,
+    supaya chip tahu mana yang sedang aktif.
     """
 
     pesan: str
+    periode_tampil: str
     produk: list[BarisUntung] = field(default_factory=list)
     cakupan_tampil: str = ""  # "78%"
     status: str = "lengkap"  # lengkap | sebagian | belum_diketahui
+    periode_label: str = ""  # "bulan_ini" | "bulan_lalu" | "3_bulan" | "bulan:2026-06"
     teks_alt: str = ""
     tipe: str = TipeKartu.untung.value
 
@@ -190,7 +211,7 @@ class KartuUntung:
                 )
                 for b in self.produk
             ]
-            self.teks_alt = "\n".join([self.pesan, *baris]).strip()
+            self.teks_alt = "\n".join([f"{self.pesan} ({self.periode_tampil})", *baris]).strip()
 
 
 @dataclass
@@ -221,6 +242,7 @@ class KartuKeuangan:
     untung: bool
     ada_data: bool
     cakupan_tampil: str  # "78%"
+    periode_label: str = ""  # bentuk mesin `periode_tampil`; menandai chip aktif
     prive_tampil: str | None = None
     rasio_prive_tampil: str | None = None
     pos_biaya: list[BarisPos] = field(default_factory=list)
@@ -237,6 +259,208 @@ class KartuKeuangan:
                     f"{self.periode_tampil} — untung usaha {self.laba_bersih_tampil} "
                     f"(omzet {self.omzet_tampil} − biaya {self.biaya_tampil})."
                 )
+
+
+@dataclass
+class KartuResep:
+    """Resep tercatat → **modal per porsi** (Pilar 4, jalur produksi).
+
+    ⛔ Bukan "untung usaha" (aturan #9): ini modal bikin per porsi, alat
+    keputusan harga. `modal_tampil` hanya terisi bila HPP `lengkap`; bila masih
+    ada bahan tanpa harga, `status="belum"` + `bahan_perlu_harga` menyebut apa
+    yang kurang — **bukan Rp0** (aturan #2). `konfirmasi` datang apa adanya dari
+    service (template kode, bukan LLM kedua).
+
+    `menunggu` = token kelanjutan tanya-jawab harga: `{product_id, bahan}` bahan
+    yang harganya sedang diminta. Klien melampirkannya ke pesan berikutnya
+    sebagai `konteks`; server memvalidasi ulang `product_id` milik tenant
+    (aturan #6). `None` = tak ada yang ditanyakan.
+    """
+
+    product_id: int
+    nama: str
+    status: str  # "lengkap" | "belum"
+    konfirmasi: str
+    modal_tampil: str | None = None
+    satuan_hpp: str | None = None
+    bahan_perlu_harga: list[str] = field(default_factory=list)
+    menunggu: dict | None = None  # {"product_id": int, "bahan": str}
+    teks_alt: str = ""
+    tipe: str = TipeKartu.resep.value
+
+    def __post_init__(self) -> None:
+        if not self.teks_alt:
+            self.teks_alt = self.konfirmasi
+
+
+@dataclass
+class KartuRiwayat:
+    """Daftar catatan terakhir — jalur baca "lihat transaksi terakhir".
+
+    Baris memakai ulang `BarisKonfirmasi` (bawa `transaksi_id` + chip kategori),
+    jadi tiap baris **bisa dibetulkan di tempat** lewat jalur `koreksi_kategori`
+    yang sudah ada. `tanggal_tampil` per baris menandai kapan (daftar bisa
+    lintas hari). ⛔ Tanpa aritmatika di sini (aturan #1): angka datang apa
+    adanya dari baris tersimpan. Daftar kosong → `baris=[]` + `pesan` jujur,
+    bukan baris karangan (aturan #2).
+
+    `periode_tampil` **kosong = daftar tak berfilter** (N terakhir keseluruhan,
+    perilaku default). Sengaja tidak dipaksa berperiode: memfilter ke bulan
+    berjalan secara diam-diam akan menyembunyikan baris yang selama ini terlihat.
+    """
+
+    baris: list[BarisKonfirmasi]
+    judul: str
+    pesan: str
+    periode_tampil: str = ""
+    periode_label: str = ""
+    teks_alt: str = ""
+    tipe: str = TipeKartu.riwayat.value
+
+    def __post_init__(self) -> None:
+        if not self.teks_alt:
+            baris = [
+                " ".join(
+                    x
+                    for x in (
+                        b.tanggal_tampil,
+                        b.jenis_label,
+                        b.nominal_tampil,
+                        f"({b.produk})" if b.produk else None,
+                    )
+                    if x
+                )
+                for b in self.baris
+            ]
+            self.teks_alt = "\n".join([self.judul, *baris]).strip() if baris else self.pesan
+
+
+@dataclass
+class BarisRingkas:
+    """Satu pasangan label–nilai untuk ringkasan kartu. Nilai sudah ter-format."""
+
+    label: str
+    nilai_tampil: str
+
+
+@dataclass
+class KartuDokumen:
+    """Dokumen jadi (laporan PDF) — tautan unduh + ringkasan isinya.
+
+    Kartu ini **bukan** dokumennya: ia cuma tanda terima. `ringkasan` mengulang
+    beberapa angka kunci supaya pengguna tahu apa yang akan dibaca penyalur
+    sebelum berkasnya dibuka — termasuk **cakupan HPP** (aturan #2).
+
+    ⛔ Tidak pernah memuat skor komposit (aturan #9), sama seperti dokumennya.
+    `catatan` selalu membawa disclaimer aturan #5 dalam bentuk pendek: kartu ini
+    yang dilihat pengguna, jadi janji "bukan jaminan persetujuan" tidak boleh
+    hanya hidup di dalam PDF-nya.
+    """
+
+    judul: str
+    periode_tampil: str
+    url_unduh: str
+    pesan: str
+    ringkasan: list[BarisRingkas] = field(default_factory=list)
+    catatan: list[str] = field(default_factory=list)
+    teks_alt: str = ""
+    tipe: str = TipeKartu.dokumen.value
+
+    def __post_init__(self) -> None:
+        if not self.teks_alt:
+            rincian = "; ".join(f"{b.label} {b.nilai_tampil}" for b in self.ringkasan)
+            self.teks_alt = "\n".join(
+                x
+                for x in (
+                    f"{self.judul} — {self.periode_tampil}",
+                    rincian or None,
+                    f"Unduh: {self.url_unduh}",
+                    *self.catatan,
+                )
+                if x
+            )
+
+
+@dataclass
+class BarisImpor:
+    """Satu baris draft impor — **calon** transaksi, belum masuk buku.
+
+    `raw` selalu dibawa dan selalu digambar: peninjau harus bisa membandingkan
+    tafsir kami dengan tulisannya sendiri, kalau tidak "meninjau" hanya berarti
+    mempercayai kami dua kali.
+
+    `terbaca=False` → baris tak terbaca sebagai peristiwa uang (judul halaman,
+    baris "jumlah"). Ia tetap tampil, tak dibuang diam-diam, dan **tak bisa**
+    dicentang. `ragu=True` → terbaca tapi ada keping yang ditebak (biasanya
+    tanggal); `catatan` menyebut sebabnya dalam bahasa warung.
+    """
+
+    row_id: int
+    raw: str
+    status: str  # draft | diterima | ditolak
+    terbaca: bool
+    ragu: bool
+    tersimpan: bool
+    catatan: str = ""
+    yang_kurang: list[str] = field(default_factory=list)
+    jenis: str | None = None
+    jenis_label: str | None = None
+    nominal_tampil: str | None = None
+    tanggal_tampil: str | None = None
+    produk: str | None = None
+    qty_tampil: str | None = None
+
+
+@dataclass
+class KartuImpor:
+    """Peninjau impor — satu-satunya jalan draft menuju buku (aturan #3).
+
+    ⛔ Kartu ini **tidak boleh** bisa digambar sebagai "sudah tersimpan" selama
+    `jumlah_tersimpan == 0`. Ia justru bukti bahwa impor berhenti di depan pintu:
+    angka-angka di sini adalah calon, dan `pesan` mengatakannya terang-terangan.
+
+    `jumlah_diterima` = sudah dicentang tapi **belum** masuk buku — itulah yang
+    akan tersimpan bila pengguna menekan konfirmasi. `jumlah_ragu` dipisah supaya
+    UI bisa menyodorkan baris ragu lebih dulu; aksi borongan tak pernah
+    menyentuhnya.
+    """
+
+    import_id: int
+    judul: str
+    pesan: str
+    baris: list[BarisImpor] = field(default_factory=list)
+    jumlah: int = 0
+    jumlah_terbaca: int = 0
+    jumlah_ragu: int = 0
+    jumlah_gagal: int = 0
+    jumlah_diterima: int = 0
+    jumlah_tersimpan: int = 0
+    jumlah_menunggu: int = 0
+    selesai: bool = False
+    catatan: list[str] = field(default_factory=list)
+    teks_alt: str = ""
+    tipe: str = TipeKartu.impor.value
+
+    def __post_init__(self) -> None:
+        if not self.teks_alt:
+            baris = [
+                " ".join(
+                    x
+                    for x in (
+                        "✓" if b.tersimpan else ("•" if b.status == "diterima" else "○"),
+                        b.tanggal_tampil,
+                        b.jenis_label,
+                        b.nominal_tampil,
+                        f"({b.produk})" if b.produk else None,
+                        f"— {b.catatan}" if b.catatan else None,
+                    )
+                    if x
+                )
+                if b.terbaca
+                else f"○ {b.raw} — {b.catatan}"
+                for b in self.baris
+            ]
+            self.teks_alt = "\n".join([self.judul, self.pesan, *baris, *self.catatan]).strip()
 
 
 @dataclass
@@ -262,6 +486,10 @@ Kartu = (
     | KartuKlarifikasi
     | KartuUntung
     | KartuKeuangan
+    | KartuResep
+    | KartuRiwayat
+    | KartuDokumen
+    | KartuImpor
     | KartuBelumDiketahui
 )
 
@@ -298,6 +526,12 @@ __all__ = [
     "KartuUntung",
     "BarisPos",
     "KartuKeuangan",
+    "KartuResep",
+    "KartuRiwayat",
+    "BarisRingkas",
+    "KartuDokumen",
+    "BarisImpor",
+    "KartuImpor",
     "KartuBelumDiketahui",
     "Kartu",
     "PesanKeluar",

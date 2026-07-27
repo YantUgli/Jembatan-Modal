@@ -22,6 +22,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Integer,
     Numeric,
     String,
     Text,
@@ -40,6 +41,7 @@ from app.models.base import (
     SumberInput,
     TimestampMixin,
     TipeKomponen,
+    now_utc,
 )
 
 # Presisi: uang 2 desimal, kuantitas 3 desimal (mis. 0,5 liter / 0,25 kg).
@@ -57,7 +59,17 @@ class User(TimestampMixin, Base):
     nama: Mapped[str] = mapped_column(String(120), nullable=False)
     no_hp: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
 
+    # Auth no.HP + PIN. `pin_hash` = `scrypt$<salt_hex>$<hash_hex>` (stdlib, tanpa
+    # dependensi). Nullable: user lama/seed tanpa PIN belum bisa login sampai
+    # di-set. Lockout brute-force: PIN 6 digit lemah, jadi hitung kegagalan.
+    pin_hash: Mapped[str | None] = mapped_column(String(255))
+    percobaan_gagal: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    terkunci_sampai: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     businesses: Mapped[list[Business]] = relationship(back_populates="user")
+    sesi: Mapped[list[Sesi]] = relationship(back_populates="user")
 
 
 class Business(Base):
@@ -71,6 +83,28 @@ class Business(Base):
     mulai_usaha: Mapped[date | None] = mapped_column(Date)
 
     user: Mapped[User] = relationship(back_populates="businesses")
+
+
+class Sesi(Base):
+    """Sesi login server-side (token opaque, revocable).
+
+    ⛔ Yang disimpan adalah **hash** token (SHA-256 hex), bukan token mentah:
+    kalau DB bocor, tak ada sesi yang bisa dipakai ulang. Lookup selalu by hash.
+    Kedaluwarsa & logout cukup lewati/hapus baris — tak ada JWT stateless yang
+    tak bisa dicabut.
+    """
+
+    __tablename__ = "sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    dibuat_pada: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, nullable=False
+    )
+    kedaluwarsa_pada: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    user: Mapped[User] = relationship(back_populates="sesi")
 
 
 class Transaction(Base):

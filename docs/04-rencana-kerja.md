@@ -69,9 +69,9 @@ Target akhir tahap: **pengguna tahu untung bersih per produk yang jujur.**
 - [ ] **Ekstraksi produk & takaran** ("5 kotak", "2 liter", "setengah kilo") → isi `product_id`/`cost_item_id` + `qty` + `satuan`. **Tanpa ini pilar 4 tidak jalan.**
 - [ ] **Deteksi jenis usaha berbasis struktur biaya** → isi `products.jenis` (`reseller|produksi`). Aturannya: apakah usaha *mengubah bahan jadi produk lain* — bukan seberapa besar usahanya (tukang ayam crispy kecil = **produksi**). Pengguna bisa mengoreksi lewat chat.
 - [ ] Multi-transaksi dalam satu pesan ("laku 5 risol 75rb, terus beli minyak 38rb").
-- [ ] `lihat_transaksi_terakhir` + `koreksi_transaksi` / `hapus_transaksi` — mitigasi utama salah ekstrak, bukan fitur opsional.
+- [x] `lihat_transaksi_terakhir` + `koreksi_transaksi` / `hapus_transaksi` — mitigasi utama salah ekstrak, bukan fitur opsional. Daftar bisa **difilter periode** ("lihat catatan bulan lalu"); tanpa periode ia tetap **tak berfilter** — memfilter diam-diam menyembunyikan baris yang selama ini terlihat. Paginasi/kursor belum ada.
 - [ ] Konfirmasi pencatatan **via template kode**, bukan panggilan LLM kedua ([02-arsitektur.md §6a](02-arsitektur.md)).
-- [ ] Tool `tanya_keuangan` (omzet, laba, top item per periode).
+- [x] Tool `tanya_keuangan` (omzet, laba, top item per periode). **Periode dibaca dari kalimat** oleh parser kode `app/services/periode.py` (kosakata tertutup), bukan LLM — prompt router sengaja tak disentuh ([keputusan.md](keputusan.md) 2026-07-27). ⚠️ Invarian yang lahir bersamanya: **kartu berangka wajib menyebut periodenya**, dan harga jual yang dipakai mengikuti **akhir periode** (sebelumnya selalu harga hari ini).
 
 ### 2b. HPP (P4)
 - [ ] Service HPP: formula reseller & produksi ([02-arsitektur.md §3a](02-arsitektur.md)) — deterministik, unit-tested.
@@ -88,21 +88,22 @@ Target akhir tahap: **pengguna tahu untung bersih per produk yang jujur.**
 > ([03-roadmap.md](03-roadmap.md) H2). Tujuan (b) mengubah *urutan* adaptor —
 > tapi hanya kalau premisnya lolos Tahap 0.
 
-- [ ] Interface parser seragam: `parse(berkas) → list[BarisDraft]`.
-- [ ] Alur draft: unggah → parse → `import_rows` (draft) → `tinjau_impor` → `konfirmasi_impor` → commit.
-- [ ] **Aturan keras: tidak pernah auto-commit.** Uji negatif wajib (Tahap 5).
-- [ ] Adaptor #1 — **foto buku tulis / screenshot** (vision). Paling relevan untuk segmen mikro; dahulukan.
+- [x] Interface parser seragam: `parse(muatan) → list[BarisDraft]` (`app/impor/kontrak.py`).
+- [x] Alur draft: parse → `import_rows` (draft) → tinjau → centang → `konfirmasi_impor` → commit. Commit memakai ulang `simpan_transaksi` (`sumber_input=impor`), jadi penautan produk & umpan HPP ikut jalan — **tak ada jalur tulis kedua**. Unggah berkas menyusul bersama adaptor foto.
+- [x] **Aturan keras: tidak pernah auto-commit.** Uji negatif terpasang di tiga lapisan (`test_impor.py`, `test_kanal_impor.py`, `test_api_impor.py`). ⚠️ Pagarnya **juga** di `tangani_pesan`: tempelan ≥3 baris di kotak chat dibelokkan ke draft — tanpa itu, menempel satu halaman buku tulis = impor auto-commit lewat jalur pencatatan ([keputusan.md](keputusan.md) 2026-07-26).
+- [ ] Adaptor #1 — **foto buku tulis / screenshot** (vision). Paling relevan untuk segmen mikro. ⚠️ **Urutan diubah sadar:** adaptor pertama yang jadi justru **tempelan teks** (`app/impor/teks.py`), karena fixture berkas nyata masih utang Tahap 0 — uji vision hari ini hanya akan menguji gambar karangan sendiri. Foto masuk ke slot `Parser` yang sama tanpa mengubah alur.
 - [ ] Adaptor #2 — CSV/spreadsheet dengan pemetaan kolom bebas via LLM.
 - [ ] Adaptor #3 — export platform (majoo / BukuWarung / **WargaFinance**) — satu adaptor per format, **bukan** patokan arsitektur.
 - [ ] 🎲 **Adaptor QRIS / e-wallet — kandidat prioritas, KONDISIONAL.** Kalau AO bank di Tahap 0 mengonfirmasi bahwa riwayat QRIS mengubah kepercayaan mereka, adaptor ini **naik ke atas** (mungkin mendahului #2 dan #3) karena ia satu-satunya sumber yang membuat laporan *terverifikasi*, bukan self-report. Kalau premisnya gugur, ia turun jadi adaptor biasa. **Jangan jadwalkan sebelum Tahap 0 menjawab.**
-- [ ] Penanda keyakinan per baris → yang ragu ditinjau duluan.
+- [x] Penanda keyakinan per baris → yang ragu ditinjau duluan. **Dihitung kode, bukan dilaporkan model** (skema ekstraksi tak punya slot keyakinan — aturan #1 diterapkan pada angka penilaian). Sebab utama "ragu": tanggal yang tidak tertulis, karena tanggal tertebak memindahkan uang antar bulan. Aksi borongan "centang yang sudah jelas" **tak pernah** menyentuh baris ragu.
 
 ## Tahap 4 — Pilar 3 (Dokumen & Panduan)
 
 ### 4a. Laporan standar bank
-- [ ] Service laba-rugi (**Omzet − HPP = Laba Kotor − Operasional = Laba Bersih**) & arus kas — deterministik, unit-tested.
-- [ ] Template HTML → PDF via WeasyPrint; format divalidasi ke masukan AO (Tahap 0).
-- [ ] Tool `buat_laporan` + penyimpanan file + URL unduh. **Cakupan HPP tercantum di laporan.**
+- [x] Service laba-rugi & arus kas — deterministik, unit-tested. **Tangga utamanya basis kas: Omzet − (Belanja + Operasional) = Laba Bersih**; arus kas memasukkan prive. ⚠️ Formula *Omzet − HPP = Laba Kotor − …* yang tertulis di dokumen ini sebelumnya **dicabut**: ia mengandaikan cakupan HPP 100%, sehingga pada cakupan parsial (kondisi normal) menghasilkan laba kotor yang sebagian dikarang — pelanggaran aturan #2 di dokumen yang dibawa ke bank. HPP & laba kotor tetap dilaporkan, tapi sebagai **blok terpisah yang menyebut cakupannya sendiri**, dijembatani `rekonsiliasi_biaya` ([keputusan.md](keputusan.md) 2026-07-26).
+- [x] Template HTML → PDF via WeasyPrint. ⚠️ **Format v1, belum divalidasi AO** (Tahap 0) — dan mengaku demikian di kaki dokumen. Seluruh tata letak di `app/laporan/laporan.css` supaya revisi pasca-tinjauan bersifat kosmetik.
+- [x] Tool `buat_laporan` + penyimpanan file + URL unduh (difilter tenant; dokumen usaha lain → 404). **Cakupan HPP tercantum di laporan** dan di kartu tanda terimanya. Dijangkau lewat **aksi terstruktur**, bukan label router.
+- [ ] "Bulan pencatatan konsisten" untuk `fakta_penyalur`: sekarang dilaporkan sebagai **hari tercatat per bulan + rentetan bulan**, tanpa ambang. Ambang "konsisten" menunggu kriteria nyata dari sisi penyalur — bukan ditetapkan sendiri.
 
 ### 4b. Skor Kesehatan Usaha
 - [ ] Implementasi komponen skor ([02-arsitektur.md §4](02-arsitektur.md)).

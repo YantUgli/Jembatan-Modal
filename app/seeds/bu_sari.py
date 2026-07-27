@@ -6,6 +6,8 @@ agar kedua jalur HPP hidup di data nyata. Sebagian pemasukan tanpa produk
 terkenali ("titipan kue") sehingga cakupan HPP wajar di bawah 100%.
 
 Idempoten: kalau Bu Sari sudah ada, tidak menyeed ulang.
+
+Kredensial demo untuk login UI: no.HP `08120000001`, PIN `123456`.
 """
 
 from __future__ import annotations
@@ -32,8 +34,10 @@ from app.models import (
     Transaction,
     User,
 )
+from app.services.auth import hash_pin
 
 NO_HP = "08120000001"
+PIN_DEMO = "123456"  # kredensial demo: login no.HP di atas + PIN ini
 MULAI = date(2026, 5, 18)
 SELESAI = date(2026, 7, 17)  # currentDate = 2026-07-18
 
@@ -67,13 +71,17 @@ def seed(session: Session) -> Business:
     """Isi DB dengan data demo Bu Sari. Kembalikan Business-nya."""
     existing = session.scalar(select(User).where(User.no_hp == NO_HP))
     if existing is not None:
+        # Backfill PIN demo bila DB lama sudah ter-seed sebelum ada auth.
+        if existing.pin_hash is None:
+            existing.pin_hash = hash_pin(PIN_DEMO)
+            session.flush()
         biz = session.scalar(select(Business).where(Business.user_id == existing.id))
         assert biz is not None
         return biz
 
     rng = random.Random(42)  # deterministik
 
-    user = User(nama="Bu Sari", no_hp=NO_HP)
+    user = User(nama="Bu Sari", no_hp=NO_HP, pin_hash=hash_pin(PIN_DEMO))
     session.add(user)
     session.flush()
 

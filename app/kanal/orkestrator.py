@@ -23,10 +23,12 @@ from sqlalchemy.orm import Session
 from app.impor import MAKS_BARIS, TerlaluBanyakBaris, tampak_tempelan
 from app.kanal.kontrak import (
     BarisImpor,
+    BarisKomponen,
     BarisKonfirmasi,
     BarisPos,
     BarisRingkas,
     BarisUntung,
+    KartuBelumDiketahui,
     KartuDokumen,
     KartuImpor,
     KartuKeuangan,
@@ -35,6 +37,7 @@ from app.kanal.kontrak import (
     KartuResep,
     KartuRiwayat,
     KartuSapaan,
+    KartuSkor,
     KartuUntung,
     PesanKeluar,
     PilihanKategori,
@@ -66,6 +69,7 @@ from app.services.impor import (
 from app.services.laba import hitung_laba_periode
 from app.services.periode import Periode, baca_periode, menyebut_masa_depan
 from app.services.resep import HasilAturResep
+from app.services.skor import hitung_skor
 from app.services.tanggal import periode_tampil as _periode
 from app.services.tanggal import tgl_pendek as _tgl_pendek
 from app.tools import (
@@ -90,6 +94,7 @@ __all__ = [
     "kartu_keuangan",
     "kartu_laporan",
     "kartu_riwayat",
+    "kartu_skor",
     "kartu_impor_teks",
     "kartu_impor_tinjau",
     "kartu_impor_putuskan",
@@ -117,6 +122,7 @@ class KonteksTunggu:
     product_id: int | None = None
     bahan: str | None = None
     transaksi_id: int | None = None
+
 
 # Badge jenis pada kartu (bahasa warung, bukan istilah akuntansi).
 _JENIS_LABEL = {
@@ -581,6 +587,85 @@ def kartu_laporan(
             )
         ]
     )
+
+
+def kartu_skor(
+    session: Session,
+    business_id: int,
+    hari_ini: date,
+    mulai: date | None = None,
+    selesai: date | None = None,
+    label: str = "",
+) -> PesanKeluar:
+    """Rapor usaha — skor komposit + rincian per komponen (Tahap 4b).
+
+    ⛔ **Aturan #9:** keluaran pengguna. Kartu ini tidak pernah punya jalan ke
+    laporan PDF / proposal KUR; yang berangkat ke sana `FaktaPenyalur`.
+
+    Nol aritmatika di sini — seluruh angka datang jadi dari `hitung_skor`
+    (aturan #1). Snapshot **sengaja tidak** ditulis di jalur baca ini: melihat
+    rapor bukan peristiwa yang mengubah riwayat, dan menulis tiap kali kartu
+    dibuka akan mengubur sinyal progres yang justru ingin ditampilkan.
+    """
+    hasil = hitung_skor(session, business_id, hari_ini, mulai=mulai, selesai=selesai)
+    periode_tampil = _periode(hasil.periode.mulai, hasil.periode.selesai)
+
+    if not hasil.diketahui:
+        return PesanKeluar(
+            [
+                KartuBelumDiketahui(
+                    judul=f"Rapor usaha — {periode_tampil}",
+                    alasan=(
+                        "Belum ada yang bisa dinilai untuk periode ini. Begitu Ibu "
+                        "mulai mencatat penjualan dan belanja, rapornya langsung terisi."
+                    ),
+                    yang_kurang=sorted({k for komp in hasil.komponen for k in komp.yang_kurang}),
+                )
+            ]
+        )
+
+    return PesanKeluar(
+        [
+            KartuSkor(
+                periode_tampil=periode_tampil,
+                periode_label=label or hasil.periode.label,
+                skor_tampil=f"{hasil.skor_total} dari 100",
+                skor_total=hasil.skor_total,
+                bobot_terpakai=hasil.bobot_terpakai,
+                cakupan_tampil=(_persen(hasil.cakupan_hpp_persen) if hasil.omzet > 0 else ""),
+                delta_tampil=_delta_tampil(hasil.delta),
+                komponen=[
+                    BarisKomponen(
+                        kunci=k.kunci,
+                        label=k.label,
+                        bobot=k.bobot,
+                        nilai=k.nilai,
+                        status=k.status.value,
+                        sebab=k.sebab,
+                        rincian_tampil=k.rincian_tampil,
+                        yang_kurang=k.yang_kurang,
+                    )
+                    for k in hasil.komponen
+                ],
+                catatan=[
+                    *hasil.catatan,
+                    "Nilai ini untuk Ibu sendiri — buat lihat kemajuan. Yang dibawa "
+                    "ke bank tetap catatan apa adanya, bukan nilai ini.",
+                ],
+            )
+        ]
+    )
+
+
+def _delta_tampil(delta: int | None) -> str | None:
+    """Progres sejak rapor terakhir. `None` = belum ada pembanding, jangan
+    ditulis "tetap" — itu klaim pengukuran yang tak pernah dilakukan."""
+    if delta is None:
+        return None
+    if delta == 0:
+        return "sama seperti rapor terakhir"
+    arah = "naik" if delta > 0 else "turun"
+    return f"{arah} {abs(delta)} poin sejak rapor terakhir"
 
 
 def kartu_riwayat(

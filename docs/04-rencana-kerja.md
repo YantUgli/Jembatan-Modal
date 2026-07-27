@@ -106,13 +106,14 @@ Target akhir tahap: **pengguna tahu untung bersih per produk yang jujur.**
 - [ ] "Bulan pencatatan konsisten" untuk `fakta_penyalur`: sekarang dilaporkan sebagai **hari tercatat per bulan + rentetan bulan**, tanpa ambang. Ambang "konsisten" menunggu kriteria nyata dari sisi penyalur — bukan ditetapkan sendiri.
 
 ### 4b. Skor Kesehatan Usaha
-- [ ] Implementasi komponen skor ([02-arsitektur.md §4](02-arsitektur.md)).
-- [ ] **Edge case sekarang, bukan nanti**: laba negatif, periode pertama tanpa pembanding, data < 30 hari, **cakupan HPP rendah** → komponen "belum dapat dihitung" + normalisasi bobot.
-- [ ] Skor parsial sejak hari pertama + label kejelasan data.
-- [ ] Snapshot berkala + tampilan progres ("naik X poin").
-- [ ] `hitung_skor_kesehatan` + narasi LLM — **hanya boleh menyebut angka dari output tool**.
-- [ ] **Dua keluaran terpisah di level API** ([02-arsitektur.md §4](02-arsitektur.md)): `skor_pengguna` (komposit + progres, untuk motivasi) vs `fakta_penyalur` (omzet, bulan konsisten, cakupan HPP %, rasio prive — **fakta mentah, tanpa skor**). ⛔ **Skor komposit tidak boleh masuk laporan/proposal yang dibaca penyalur** sebelum terkalibrasi data nyata.
-- [ ] **Catat hasil pengajuan** → `kur_outcomes` (lolos/ditolak/plafon cair). Yang dibangun sekarang **hanya pencatatannya**; kalibrasinya menunggu data cukup (H4). Tanpa mulai mencatat sekarang, flywheel tidak pernah punya bahan bakar.
+- [x] Implementasi komponen skor ([02-arsitektur.md §4](02-arsitektur.md)) — `app/services/skor.py`, deterministik & ber-unit-test. **Periodenya 30 hari bergulir**, bukan bulan berjalan: atas bulan berjalan komponen konsistensi membaca "2 dari 3 hari" pada tanggal 3 lalu bergeser sepanjang bulan, jadi skor naik-turun karena kalender ([keputusan.md](keputusan.md) 2026-07-27).
+- [x] **Edge case sekarang, bukan nanti**: laba negatif (prive tak terdefinisi), periode pertama tanpa pembanding, data < 30 hari (penyebut = umur usaha) → komponen "belum dapat dihitung" + normalisasi bobot; nol bobot efektif → skor **`None`**, bukan 0. ⚠️ **Cakupan HPP rendah dicoret dari daftar ini**: sejak tangga laba jadi basis kas ([keputusan.md](keputusan.md) 2026-07-26) `laba_bersih` tak lagi bergantung HPP, jadi menggerbangi margin dengannya berarti menolak menskor angka yang sudah kita tampilkan percaya diri di kartu keuangan & laporan PDF. Cakupan HPP tetap ditampilkan — sebagai label kejelasan data, bukan gerbang.
+- [x] Skor parsial sejak hari pertama + label kejelasan data (`cakupan_tampil` + catatan "N dari 4 bagian belum bisa dinilai").
+- [x] Snapshot berkala + tampilan progres ("naik X poin"). Snapshot ber-dedup meniru `simpan_snapshot_hpp`; pembanding delta sengaja **melewati snapshot berperiode sama** — "naik 0 poin" dari tulisan kita sendiri bukan progres. ⚠️ Penulisannya belum dipanggil di jalur produksi (sama seperti `simpan_snapshot_hpp`) — lihat slice pembersihan.
+- [x] **Dua keluaran terpisah di level API** ([02-arsitektur.md §4](02-arsitektur.md)): `skor_pengguna` (aksi `tanya_skor` → `KartuSkor`) vs `fakta_penyalur` (`FaktaPenyalur` di laporan). ⛔ Uji negatif terpasang di `tests/test_skor.py`: `RingkasanLaporan` & HTML laporan tidak boleh membawa angka skor.
+- [ ] Narasi LLM di atas kartu skor — **hanya boleh menyebut angka dari output tool**. Sengaja ditunda: kartunya sudah menjelaskan dirinya sendiri lewat rincian per komponen, jadi panggilan LLM kedua belum membayar biayanya.
+- [ ] Label router `tanya_skor` (sekarang aksi terstruktur/chip saja) — dipisah supaya dampaknya pada akurasi enam label yang ada bisa diukur sendirian lewat `evaluasi/router.json`.
+- [ ] **Catat hasil pengajuan** → `kur_outcomes` (lolos/ditolak/plafon cair). Yang dibangun sekarang **hanya pencatatannya**; kalibrasinya menunggu data cukup (H4). Tanpa mulai mencatat sekarang, flywheel tidak pernah punya bahan bakar — dan sampai ia berputar, ambang skor tetap kalibrasi awal yang tak boleh dihadapkan ke penyalur.
 
 ### 4c. Asisten KUR & panduan formal
 - [ ] Alur wawancara multi-turn (state di `kur_interviews`).

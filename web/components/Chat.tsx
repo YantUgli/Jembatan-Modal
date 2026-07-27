@@ -16,6 +16,7 @@ import {
   DokumenView,
   ImporView,
   KeuanganView,
+  SkorView,
   KlarifikasiView,
   KonfirmasiView,
   NarasiView,
@@ -79,6 +80,7 @@ const JUDUL_AKSI: Record<string, string> = {
   tanya_untung: "Untung per porsi",
   tanya_keuangan: "Laporan singkat",
   lihat_transaksi: "Catatan",
+  tanya_skor: "Rapor usaha",
 };
 
 const SUGGESTIONS: {
@@ -244,7 +246,12 @@ export default function Chat() {
   // jalannya tombol, bukan kalimat yang harus ditebak router.
   const tanyaAksi = useCallback(
     async (
-      aksi: "tanya_untung" | "tanya_keuangan" | "lihat_transaksi" | "buat_laporan",
+      aksi:
+        | "tanya_untung"
+        | "tanya_keuangan"
+        | "lihat_transaksi"
+        | "tanya_skor"
+        | "buat_laporan",
       label: string,
       // Label periode dari chip. Dikirim apa adanya; tanggalnya dihitung server
       // (label asing dijawab 422, jadi tak ada jalan diam-diam salah periode).
@@ -282,7 +289,10 @@ export default function Chat() {
   // Kartu lama sengaja dibiarkan di layar: ia catatan percakapan saat itu, dan
   // dua kartu berdampingan justru memperlihatkan bedanya antar-periode.
   const tanyaPeriode = useCallback(
-    (aksi: "tanya_untung" | "tanya_keuangan" | "lihat_transaksi", periode: string) => {
+    (
+      aksi: "tanya_untung" | "tanya_keuangan" | "lihat_transaksi" | "tanya_skor",
+      periode: string,
+    ) => {
       const kapan = SEBUTAN_PERIODE[periode] ?? "Terakhir";
       tanyaAksi(aksi, `${JUDUL_AKSI[aksi]} · ${kapan}`, periode || undefined);
     },
@@ -410,6 +420,7 @@ export default function Chat() {
                 onKoreksi={koreksi}
                 onBetulkan={mintaBetulkan}
                 onBuatLaporan={() => tanyaAksi("buat_laporan", "Buat laporan PDF")}
+                onLihatSkor={() => tanyaAksi("tanya_skor", "Lihat rapor usaha")}
                 onPeriode={tanyaPeriode}
                 onImpor={(body) => aksiImpor(it.id, body)}
                 ditunjuk={menunggu?.jenis === "koreksi_sasaran" ? menunggu.transaksi_id : null}
@@ -499,6 +510,7 @@ function KartuView({
   onKoreksi,
   onBetulkan,
   onBuatLaporan,
+  onLihatSkor,
   onPeriode,
   onImpor,
   ditunjuk,
@@ -509,8 +521,9 @@ function KartuView({
   onKoreksi: (itemId: number, transaksiId: number, jenis: string) => void;
   onBetulkan: (transaksiId: number) => void;
   onBuatLaporan: () => void;
+  onLihatSkor: () => void;
   onPeriode: (
-    aksi: "tanya_untung" | "tanya_keuangan" | "lihat_transaksi",
+    aksi: "tanya_untung" | "tanya_keuangan" | "lihat_transaksi" | "tanya_skor",
     periode: string,
   ) => void;
   onImpor: (body: ChatBody) => void;
@@ -545,9 +558,14 @@ function KartuView({
         <KeuanganView
           kartu={kartu}
           onBuatLaporan={onBuatLaporan}
+          onLihatSkor={onLihatSkor}
           onPeriode={(p) => onPeriode("tanya_keuangan", p)}
           sibuk={sibuk}
         />
+      );
+    case "skor":
+      return (
+        <SkorView kartu={kartu} sibuk={sibuk} onPeriode={(p) => onPeriode("tanya_skor", p)} />
       );
     case "dokumen":
       return <DokumenView kartu={kartu} />;

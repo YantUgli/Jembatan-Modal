@@ -75,7 +75,7 @@ def test_buat_laporan_menyimpan_dokumen_dan_kartu_membawa_tautan(
     buat_transaksi(session, business, JenisTransaksi.pemasukan, 500_000, date(2026, 7, 5))
 
     data = _buat(session, business)
-    assert data["versi"] == 8
+    assert data["versi"] == 9
 
     kartu = data["kartu"][0]
     assert kartu["tipe"] == "dokumen"

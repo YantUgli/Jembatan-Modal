@@ -2,7 +2,7 @@
 // Satu-satunya sumber kebenaran bentuk tetap di Python; berkas ini menyalin
 // bentuknya agar UI bertipe. Bila `VERSI_KONTRAK` naik, sesuaikan di sini.
 
-export const VERSI_KONTRAK = 8;
+export const VERSI_KONTRAK = 9;
 
 export type TipeKartu =
   | "sapaan"
@@ -15,6 +15,7 @@ export type TipeKartu =
   | "riwayat"
   | "dokumen"
   | "impor"
+  | "skor"
   | "belum_diketahui";
 
 export interface KartuSapaan {
@@ -203,6 +204,36 @@ export interface KartuImpor {
   teks_alt: string;
 }
 
+export interface BarisKomponen {
+  kunci: string;
+  label: string;
+  bobot: number;
+  // `null` = belum bisa dinilai, BUKAN nol. Renderer wajib membedakannya:
+  // nol adalah penilaian buruk, null adalah ketiadaan data (aturan #2).
+  nilai: number | null;
+  status: "dihitung" | "belum_diketahui";
+  sebab: string;
+  rincian_tampil: string;
+  yang_kurang: string[];
+}
+
+// Rapor usaha. ⛔ Aturan #9: angka di kartu ini KELUARAN PENGGUNA — ia tidak
+// pernah muncul di laporan PDF / proposal KUR. Jangan pernah menyalinnya ke
+// permukaan mana pun yang dibaca penyalur.
+export interface KartuSkor {
+  tipe: "skor";
+  periode_tampil: string;
+  skor_tampil: string; // "58 dari 100"
+  skor_total: number | null;
+  komponen: BarisKomponen[];
+  cakupan_tampil: string; // label kejelasan data, bukan gerbang
+  bobot_terpakai: number;
+  periode_label: string;
+  delta_tampil: string | null;
+  catatan: string[];
+  teks_alt: string;
+}
+
 export interface KartuBelumDiketahui {
   tipe: "belum_diketahui";
   judul: string;
@@ -222,6 +253,7 @@ export type Kartu =
   | KartuRiwayat
   | KartuDokumen
   | KartuImpor
+  | KartuSkor
   | KartuBelumDiketahui;
 
 export interface PesanKeluar {
@@ -247,6 +279,9 @@ export type ChatBody =
   | { aksi: "tanya_untung"; periode?: string }
   | { aksi: "tanya_keuangan"; periode?: string }
   | { aksi: "lihat_transaksi"; periode?: string }
+  // Rapor usaha. Aksi terstruktur, bukan label router: menambah label ke-7 ke
+  // `AksiRouter` berisiko menggeser akurasi label yang sudah ada.
+  | { aksi: "tanya_skor"; periode?: string }
   // Laporan dijangkau lewat aksi terstruktur, bukan kalimat: "laporan singkat
   // dong" sudah berarti `tanya_keuangan` (kartu di layar), dan membuat PDF
   // adalah tindakan sengaja.

@@ -1,6 +1,8 @@
 {
   "permissions": {
     "allow": [
+      "mcp__codebase-memory-mcp",
+      "Read(**)",
       "Bash(PIPENV_IGNORE_VIRTUALENVS=1 pipenv run pytest tests/test_entitas.py -q)",
       "Bash(PIPENV_IGNORE_VIRTUALENVS=1 pipenv run pytest tests/test_resep.py -q)",
       "Bash(pipenv run *)",
@@ -85,6 +87,10 @@
     ],
     "additionalDirectories": [
       "c:\\Users\\bryant\\.claude\\projects\\c--project-Jembatan-Modal\\memory"
+    ],
+    "ask": [
+      "Grep(**)",
+      "Glob(**)"
     ]
   }
 }

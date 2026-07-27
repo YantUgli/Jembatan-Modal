@@ -326,7 +326,9 @@ yang dibangun sekarang cuma **pencatatan hasilnya**, bukan kalibrasinya.
 | Disiplin prive | 20 | Rasio penarikan pribadi terhadap laba (prive ≤50% laba = penuh) |
 
 Catatan desain:
-- **Bergantung pada HPP (§3a).** Komponen *margin laba* baru bermakna kalau laba bersih dihitung setelah HPP. Bila cakupan HPP rendah, komponen ini **ditandai "belum bisa dihitung"** dan bobotnya dinormalisasi — jangan pernah menyajikan margin dari "uang masuk − uang keluar" seolah itu margin sesungguhnya.
+- **Periode = 30 hari bergulir**, bukan bulan berjalan. Bulan berjalan membuat komponen *konsistensi* membaca "2 dari 3 hari" pada tanggal 3 lalu bergeser sepanjang bulan — skor turun tanpa pengguna berbuat salah. Pembanding tren = 30 hari sebelum itu ([../keputusan.md](../keputusan.md) 2026-07-27).
+- **Margin laba TIDAK digerbangi cakupan HPP.** ~~Bila cakupan HPP rendah, komponen ini ditandai "belum bisa dihitung" dan bobotnya dinormalisasi.~~ Pasal itu ditulis sebelum keputusan 2026-07-26 mencabut formula "Omzet − HPP = Laba Kotor": tangga laba sekarang **basis kas** dengan cakupan biaya 100% menurut definisi, jadi `laba_bersih ÷ omzet` tak lagi bergantung pada HPP. Menggerbanginya berarti menolak menskor angka yang sudah kita tampilkan percaya diri di `KartuKeuangan` & laporan PDF. Cakupan HPP tetap ditampilkan di kartu skor — sebagai **label kejelasan data**, bukan gerbang ([../keputusan.md](../keputusan.md) 2026-07-27).
+- Bobot komponen yang **memang** tak bisa dihitung (omzet nol, tak ada periode pembanding, laba ≤ 0 sehingga rasio prive tak terdefinisi) dinormalisasi: `skor = Σ nilai ÷ Σ bobot_efektif × 100`. Nol bobot efektif → skor **`None`**, bukan 0 (aturan #2).
 - Ambang batas di atas adalah **kalibrasi awal** — disempurnakan saat validasi dengan pelaku UMKM dan (idealnya) masukan praktisi pembiayaan mikro.
 - Rincian per-komponen selalu ditampilkan: pengguna tahu persis kenapa skornya 58, dan apa yang menaikkannya. Transparansi = kepercayaan + motivasi.
 - Skor disimpan sebagai snapshot berkala sehingga progresnya bisa ditampilkan ("naik 16 poin dalam 2 bulan" — kalimat kuat dalam proposal KUR).

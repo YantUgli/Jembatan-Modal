@@ -5,6 +5,64 @@
 
 ---
 
+## 2026-07-27 — Skor: margin tidak digerbangi cakupan HPP, dan periodenya 30 hari bergulir
+
+- **Konteks:** slice Skor Kesehatan Usaha (Tahap 4b) — celah kode terakhir di H2
+  yang tidak terhalang Tahap 0. Saat hendak menuliskan komponen skor, dua pasal
+  [02-arsitektur.md](02-arsitektur.md) §4 ternyata sudah tidak sinkron dengan
+  keputusan-keputusan yang lahir sesudahnya.
+
+- **Keputusan:**
+  1. **Komponen *margin laba* dihitung dari `laba_bersih ÷ omzet` dan TIDAK
+     digerbangi cakupan HPP.** Pasal §4 yang menyuruh menandainya "belum bisa
+     dihitung" saat cakupan HPP rendah **dicabut**.
+  2. **Periode skor = 30 hari bergulir** sampai hari ini; pembanding tren = 30
+     hari sebelumnya. Bukan bulan berjalan.
+  3. **Normalisasi bobot** untuk komponen yang memang tak terhitung (omzet nol,
+     tak ada periode pembanding, laba ≤ 0 sehingga rasio prive tak terdefinisi):
+     `skor = Σ nilai ÷ Σ bobot_efektif × 100`. Σ bobot efektif nol → skor
+     **`None`** + kartu "belum diketahui", bukan angka 0.
+  4. **Konsistensi pencatatan memakai umur usaha sebagai penyebut** bila usaha
+     lebih muda dari 30 hari.
+  5. Skor dijangkau lewat **aksi terstruktur** `tanya_skor` (chip di kartu
+     keuangan), bukan label router — `AksiRouter` tidak disentuh di slice ini.
+
+- **Alasan:** butir 1 karena pasal §4 ditulis **sebelum** keputusan 2026-07-26
+  mencabut formula "Omzet − HPP = Laba Kotor". Setelah pencabutan itu tangga laba
+  adalah basis kas dengan **cakupan biaya 100% menurut definisi** — `laba_bersih`
+  tidak lagi mengandung komponen yang bergantung pada HPP, jadi premis gerbangnya
+  hilang. Kekhawatiran asli §4 ("jangan sajikan uang masuk − uang keluar seolah
+  margin sesungguhnya") tetap sah, tapi jawabannya bukan gerbang: angka itu
+  **sudah** kita tampilkan percaya diri di `KartuKeuangan` dan di laporan PDF yang
+  dibawa ke bank. Menolak menskornya di kartu ketiga berarti produk yang sama
+  tidak sepakat dengan dirinya sendiri — dan pengguna tanpa resep sama sekali akan
+  kehilangan 25 bobot karena hal yang tak ada hubungannya dengan disiplin
+  keuangannya. Cakupan HPP tetap dibawa kartu skor sebagai **label kejelasan
+  data**, sejalan aturan #2, hanya saja perannya konteks, bukan gerbang.
+  Butir 2 & 4 karena bulan berjalan menghukum pengguna oleh kalender: pada tanggal
+  3, "% hari bercatatan" membaca 2 dari 3 dan angkanya bergeser sepanjang bulan
+  tanpa perubahan perilaku apa pun — persis kelas angka menyesatkan yang aturan #2
+  larang. Butir 3 karena memberi nilai 0 pada komponen yang **tak terhitung**
+  adalah mengarang penilaian buruk dari ketiadaan data (aturan #2 diterapkan pada
+  angka penilaian, sama seperti aturan #9). Butir 5 karena menaikkan `AksiRouter`
+  6→7 label berisiko menggeser akurasi label yang sudah ada — keputusan 2026-07-22
+  mencatat prompt "jungkat-jungkit" di ukuran model ini. Memisahkannya ke slice
+  sendiri membuat dampaknya bisa diukur sendirian lewat `evaluasi/router.json`.
+
+- **Konsekuensi:**
+  - `skor_total` tetap **keluaran pengguna saja** (aturan #9). Uji negatif
+    terpasang: `ringkas_laporan` & HTML laporan tidak boleh memuatnya.
+  - Kartu skor menyebut periodenya (invarian 2026-07-27) dan membawa rincian per
+    komponen — termasuk yang berstatus belum diketahui, supaya pengguna tahu
+    persis apa yang menaikkannya.
+  - Label periode `30_hari` ditambahkan ke `periode_dari_label()`; kosakata
+    **parser kalimat tidak disentuh** — chip mengirim balik labelnya sendiri.
+  - Ambang (margin ≥20% penuh, prive ≤50% penuh) tetap kalibrasi awal. Yang
+    membetulkannya adalah `kur_outcomes`, bukan perdebatan internal — dan itu
+    belum ada. Sampai saat itu skor tidak boleh dihadapkan ke penyalur.
+
+---
+
 ## 2026-07-27 — Sumbu waktu: periode dibaca kode, dan kartu wajib menyebut periodenya
 
 - **Konteks:** sampai slice ini seluruh produk hanya bisa menjawab satu periode,

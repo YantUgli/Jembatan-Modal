@@ -5,6 +5,13 @@
 Backend + UI chat JembatanModal: asisten AI yang mengubah catatan keuangan harian
 UMKM menjadi kejelasan untung-rugi yang jujur dan kesiapan mengakses modal formal.
 
+## Navigasi struktur codebase
+Untuk memahami struktur, arsitektur, pemanggil/pemanggilan, atau alur:
+LANGKAH PERTAMA wajib pakai tool codebase-memory-mcp (get_architecture,
+trace_path, list_projects, dsb). JANGAN gunakan ls, find, tree, cat, grep,
+atau membaca file satu per satu untuk memetakan struktur. Baca file mentah
+HANYA bila butuh detail implementasi baris tertentu yang tak tersedia dari graph.
+
 **Perencanaan hidup di `docs/` repo ini** — baca sebelum mengubah arsitektur:
 - Project brief (scope & non-goals) — [`docs/00-project-brief.md`](docs/00-project-brief.md)
 - Arsitektur teknis — [`docs/02-arsitektur.md`](docs/02-arsitektur.md)

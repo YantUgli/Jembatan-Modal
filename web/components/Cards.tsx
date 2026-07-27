@@ -13,6 +13,7 @@ import type {
   KartuNarasi,
   KartuResep,
   KartuRiwayat,
+  KartuSkor,
   KartuUntung,
 } from "@/lib/kontrak";
 import { Mark } from "./Brand";
@@ -376,6 +377,7 @@ export function ResepView({ kartu }: { kartu: KartuResep }) {
 export function KeuanganView({
   kartu,
   onBuatLaporan,
+  onLihatSkor,
   onPeriode,
   sibuk = false,
 }: {
@@ -383,6 +385,9 @@ export function KeuanganView({
   // Tombol laporan hanya muncul kalau pemanggil menyediakan aksinya. Sengaja
   // tombol, bukan kalimat: "laporan singkat dong" sudah berarti kartu ini.
   onBuatLaporan?: () => void;
+  // Rapor usaha — jalan masuk `tanya_skor`. Alasan yang sama dengan laporan:
+  // aksi terstruktur, bukan label router.
+  onLihatSkor?: () => void;
   onPeriode?: (label: string) => void;
   sibuk?: boolean;
 }) {
@@ -467,10 +472,80 @@ export function KeuanganView({
         <PeriodeChips aktif={kartu.periode_label} onPilih={onPeriode} sibuk={sibuk} />
       )}
 
+      {onLihatSkor && (
+        <button className="btn-kartu btn-halus" type="button" disabled={sibuk} onClick={onLihatSkor}>
+          Lihat rapor usaha
+        </button>
+      )}
+
       {onBuatLaporan && (
         <button className="btn-kartu" type="button" disabled={sibuk} onClick={onBuatLaporan}>
           {sibuk ? "Menyiapkan laporan…" : "Buat laporan PDF"}
         </button>
+      )}
+    </div>
+  );
+}
+
+// Rapor usaha. ⛔ Aturan #9: kartu ini untuk PENGGUNA. Angkanya tak pernah
+// dibawa ke laporan PDF / proposal KUR — jangan pernah menyalin `skor_total`
+// ke permukaan yang dibaca penyalur.
+export function SkorView({
+  kartu,
+  onPeriode,
+  sibuk = false,
+}: {
+  kartu: KartuSkor;
+  onPeriode?: (label: string) => void;
+  sibuk?: boolean;
+}) {
+  return (
+    <div className="kartu">
+      <div className="keu-head">
+        <span className="keu-kap">Rapor usaha</span>
+        <span className="keu-periode">{kartu.periode_tampil}</span>
+      </div>
+
+      <div className="skor-angka">{kartu.skor_tampil}</div>
+      {kartu.delta_tampil && <div className="skor-delta">{kartu.delta_tampil}</div>}
+
+      <div className="skor-komponen">
+        {kartu.komponen.map((k) => (
+          <div className="skor-row" key={k.kunci}>
+            <div className="skor-row-head">
+              <span className="skor-lab">{k.label}</span>
+              {/* `nilai === null` ≠ 0: yang satu belum dinilai, yang satu
+                  dinilai nol. Menggambarnya sama = mengarang penilaian. */}
+              <span className={`skor-nilai${k.nilai === null ? " belum" : ""}`}>
+                {k.nilai === null ? "belum dinilai" : `${k.nilai}/${k.bobot}`}
+              </span>
+            </div>
+            {k.nilai === null ? (
+              <div className="skor-bar-kosong" aria-hidden />
+            ) : (
+              <div className="skor-bar" aria-hidden>
+                <span style={{ width: `${Math.round((k.nilai / k.bobot) * 100)}%` }} />
+              </div>
+            )}
+            <p className="skor-sebab">{k.nilai === null ? k.sebab : k.rincian_tampil}</p>
+          </div>
+        ))}
+      </div>
+
+      {kartu.cakupan_tampil && (
+        <span className="untung-pill">
+          Modal bahan terhitung untuk {kartu.cakupan_tampil} penjualan
+        </span>
+      )}
+
+      {kartu.catatan.map((c, i) => (
+        <p className="kartu-catatan" key={i}>
+          {c}
+        </p>
+      ))}
+
+      {onPeriode && (
+        <PeriodeChips aktif={kartu.periode_label} onPilih={onPeriode} sibuk={sibuk} />
       )}
     </div>
   );

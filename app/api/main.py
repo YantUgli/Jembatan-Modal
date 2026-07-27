@@ -34,6 +34,7 @@ from app.kanal import (
     kartu_keuangan,
     kartu_laporan,
     kartu_riwayat,
+    kartu_skor,
     kartu_untung,
     koreksi_kategori,
     sapaan,
@@ -147,9 +148,9 @@ class KonteksMasuk(BaseModel):
 
 class PesanMasuk(BaseModel):
     teks: str | None = None
-    # koreksi_kategori | tanya_untung | tanya_keuangan | lihat_transaksi |
-    # buat_laporan | impor_tinjau | impor_putuskan | impor_terima_yakin |
-    # impor_konfirmasi
+    # koreksi_kategori | tanya_untung | tanya_keuangan | tanya_skor |
+    # lihat_transaksi | buat_laporan | impor_tinjau | impor_putuskan |
+    # impor_terima_yakin | impor_konfirmasi
     aksi: str | None = None
     transaksi_id: int | None = None
     jenis: str | None = None  # nilai JenisTransaksi untuk koreksi_kategori
@@ -265,6 +266,21 @@ def chat(
     if pesan.aksi == "tanya_keuangan":
         mulai, selesai, label = _periode(pesan, hari_ini)
         return kartu_keuangan(session, business.id, mulai, selesai, label=label).ke_dict()
+
+    if pesan.aksi == "tanya_skor":
+        # Aksi terstruktur, bukan label router: menambah label ke-7 ke
+        # `AksiRouter` berisiko menggeser akurasi enam label yang sudah ada
+        # (keputusan.md 2026-07-22). Naik ke router menyusul, setelah
+        # `app.llm.evaluasi_router` mengukur dampaknya sendirian.
+        p = _label_periode(pesan, hari_ini)
+        return kartu_skor(
+            session,
+            business.id,
+            hari_ini,
+            mulai=pesan.mulai or (p.mulai if p else None),
+            selesai=pesan.selesai or (p.selesai if p else None),
+            label=p.label if p else "",
+        ).ke_dict()
 
     if pesan.aksi == "lihat_transaksi":
         # Tanpa `periode` → daftar tak berfilter (perilaku default). Lihat

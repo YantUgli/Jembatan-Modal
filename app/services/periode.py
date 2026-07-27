@@ -32,15 +32,20 @@ from app.services.tanggal import akhir_bulan, awal_bulan, bulan_kalender_terakhi
 
 __all__ = [
     "MAKS_BULAN",
+    "MAKS_HARI",
     "Periode",
     "baca_periode",
     "menyebut_masa_depan",
     "periode_dari_label",
+    "periode_n_hari",
 ]
 
 # Rentang "N bulan terakhir" yang dilayani. Di atas ini pertanyaannya bukan lagi
 # soal warung berjalan, dan laporan multi-tahun bukan permukaan chat.
 MAKS_BULAN = 12
+
+# Rentang "N hari terakhir" yang dilayani lewat label chip.
+MAKS_HARI = 366
 
 
 @dataclass(frozen=True)
@@ -158,6 +163,22 @@ def _tahun_ini(hari_ini: date) -> Periode:
     return Periode(date(hari_ini.year, 1, 1), hari_ini, "tahun_ini", "Tahun ini")
 
 
+def periode_n_hari(n: int, hari_ini: date) -> Periode:
+    """`n` hari terakhir **termasuk hari ini** — jendela bergulir, bukan kalender.
+
+    Dipakai skor kesehatan usaha: komponen "% hari bercatatan" atas bulan berjalan
+    membaca 2 dari 3 hari pada tanggal 3 lalu bergeser sepanjang bulan, jadi
+    skornya turun-naik karena kalender, bukan karena perilaku pemilik
+    (`docs/keputusan.md` 2026-07-27).
+
+    ⛔ Tidak masuk kosakata `baca_periode`: tak ada pemilik warung yang bertanya
+    "30 hari terakhir". Ia hidup di jalur label/chip saja.
+    """
+    if not 1 <= n <= MAKS_HARI:
+        raise ValueError(f"rentang hari di luar jangkauan: {n}")
+    return Periode(hari_ini - timedelta(days=n - 1), hari_ini, f"{n}_hari", f"{n} hari terakhir")
+
+
 # ── Pembacaan kalimat ───────────────────────────────────────────────────────
 
 
@@ -260,6 +281,11 @@ def periode_dari_label(label: str, hari_ini: date) -> Periode:
 
     if (m := re.fullmatch(r"(\d{1,2})_bulan", label)) and (p := _n_bulan(int(m.group(1)), hari_ini)):
         return p
+
+    if m := re.fullmatch(r"(\d{1,3})_hari", label):
+        n = int(m.group(1))
+        if 1 <= n <= MAKS_HARI:
+            return periode_n_hari(n, hari_ini)
 
     if m := re.fullmatch(r"bulan:(\d{4})-(\d{2})", label):
         tahun, bulan = int(m.group(1)), int(m.group(2))

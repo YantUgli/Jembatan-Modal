@@ -65,6 +65,7 @@ __all__ = [
     "Identitas",
     "RingkasanLaporan",
     "ringkas_laporan",
+    "tanggal_bercatatan",
 ]
 
 JUMLAH_BULAN_DEFAULT = 3
@@ -157,11 +158,14 @@ def _pecah_bulan(mulai: date, selesai: date) -> list[tuple[date, date]]:
     return potongan
 
 
-def _tanggal_bercatatan(session: Session, business_id: int) -> list[date]:
+def tanggal_bercatatan(session: Session, business_id: int) -> list[date]:
     """Tanggal berbeda yang punya transaksi berlaku, terlama dulu (aturan #6).
 
-    Satu query untuk seluruh riwayat: dipakai dua kali (hari tercatat per bulan
-    di dalam periode, dan rentetan bulan yang boleh melampaui periode laporan).
+    Satu query untuk seluruh riwayat: dipakai untuk hari tercatat per bulan di
+    dalam periode, rentetan bulan yang boleh melampaui periode laporan, dan —
+    di `app/services/skor.py` — konsistensi pencatatan + umur usaha. Publik
+    justru supaya tak ada yang menyalin query-nya: satu tempat yang tahu bahwa
+    baris `dibatalkan_pada` tidak ikut dihitung (buku append-only).
     """
     return sorted(
         set(
@@ -217,7 +221,7 @@ def ringkas_laporan(
     if selesai < mulai:
         raise ValueError("selesai tidak boleh sebelum mulai")
 
-    tanggal = _tanggal_bercatatan(session, business.id)
+    tanggal = tanggal_bercatatan(session, business.id)
 
     bulan: list[BulanLaporan] = []
     for awal, akhir in _pecah_bulan(mulai, selesai):

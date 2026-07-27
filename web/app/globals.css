@@ -858,6 +858,78 @@ button {
   color: var(--tinta-60);
 }
 
+/* ── Rapor usaha (skor) ────────────────────────────────────────────────────
+   Komponen yang BELUM bisa dinilai digambar berbeda dari yang bernilai nol:
+   bar kosong bergaris putus-putus vs bar terisi 0%. Menggambarnya sama akan
+   membuat ketiadaan data terbaca sebagai penilaian buruk (aturan #2). */
+.skor-angka {
+  font-size: 38px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--hijau);
+  margin-top: 6px;
+  line-height: 1;
+}
+.skor-delta {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--tinta-50);
+  margin-top: 7px;
+}
+.skor-komponen {
+  margin-top: 16px;
+  display: grid;
+  gap: 13px;
+}
+.skor-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.skor-lab {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--tinta);
+}
+.skor-nilai {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--hijau);
+  white-space: nowrap;
+}
+.skor-nilai.belum {
+  color: var(--tinta-45);
+  font-weight: 600;
+  font-style: italic;
+}
+.skor-bar,
+.skor-bar-kosong {
+  height: 6px;
+  border-radius: 999px;
+  margin-top: 6px;
+}
+.skor-bar {
+  background: var(--garis);
+  overflow: hidden;
+}
+.skor-bar span {
+  display: block;
+  height: 100%;
+  background: var(--hijau);
+  border-radius: 999px;
+}
+.skor-bar-kosong {
+  border: 1px dashed var(--garis);
+  background: transparent;
+}
+.skor-sebab {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--tinta-50);
+}
+
 /* ── Komposer ──────────────────────────────────────────────────────────── */
 
 .komposer {

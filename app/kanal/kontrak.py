@@ -26,7 +26,7 @@ from dataclasses import asdict, dataclass, field
 
 from enum import Enum
 
-VERSI_KONTRAK = 8
+VERSI_KONTRAK = 9
 
 
 class TipeKartu(str, Enum):
@@ -40,6 +40,7 @@ class TipeKartu(str, Enum):
     riwayat = "riwayat"
     dokumen = "dokumen"
     impor = "impor"
+    skor = "skor"
     belum_diketahui = "belum_diketahui"
 
 
@@ -464,6 +465,71 @@ class KartuImpor:
 
 
 @dataclass
+class BarisKomponen:
+    """Satu komponen skor. `nilai` `None` = belum bisa dinilai, **bukan nol**.
+
+    `sebab` & `yang_kurang` menjelaskan apa yang membuatnya belum terhitung —
+    itulah yang mengubah skor dari vonis jadi petunjuk (§4: transparansi =
+    motivasi). Kanal menggambar komponen ini **tetap tampil**, tidak disembunyikan.
+    """
+
+    kunci: str
+    label: str
+    bobot: int
+    nilai: int | None
+    status: str  # "dihitung" | "belum_diketahui"
+    sebab: str = ""
+    rincian_tampil: str = ""
+    yang_kurang: list[str] = field(default_factory=list)
+
+
+@dataclass
+class KartuSkor:
+    """Rapor usaha — skor komposit 0–100 + rincian per komponen.
+
+    ⛔ **Aturan #9: ini keluaran PENGGUNA saja.** Angka di kartu ini tidak pernah
+    berangkat ke dokumen yang dibaca penyalur (laporan PDF, proposal KUR) sebelum
+    terkalibrasi `kur_outcomes` nyata. Yang ke sana adalah `FaktaPenyalur` —
+    fakta mentah tanpa penilaian. Menyodorkan "72/100" ke AO bank = mengarang
+    otoritas yang belum kita punya.
+
+    `skor_total` `None` (dan `skor_tampil` kosong) = belum ada satu pun komponen
+    yang bisa dihitung — pemanggil memakai `KartuBelumDiketahui`, bukan angka 0
+    (aturan #2). `cakupan_tampil` adalah **label kejelasan data**, bukan gerbang:
+    margin laba tetap dinilai walau cakupan HPP nol (keputusan 2026-07-27).
+
+    `periode_tampil` wajib, seperti seluruh kartu berangka (invarian 2026-07-27).
+    """
+
+    periode_tampil: str
+    skor_tampil: str  # "58 dari 100"
+    skor_total: int | None
+    komponen: list[BarisKomponen] = field(default_factory=list)
+    cakupan_tampil: str = ""  # "78%"
+    bobot_terpakai: int = 0
+    periode_label: str = ""
+    delta_tampil: str | None = None  # "naik 6 poin sejak catatan terakhir"
+    catatan: list[str] = field(default_factory=list)
+    teks_alt: str = ""
+    tipe: str = TipeKartu.skor.value
+
+    def __post_init__(self) -> None:
+        if not self.teks_alt:
+            baris = [
+                (
+                    f"{k.label}: {k.nilai}/{k.bobot}"
+                    if k.nilai is not None
+                    else f"{k.label}: belum bisa dinilai — {k.sebab}"
+                )
+                for k in self.komponen
+            ]
+            kepala = f"{self.skor_tampil} ({self.periode_tampil})"
+            if self.delta_tampil:
+                kepala += f" — {self.delta_tampil}"
+            self.teks_alt = "\n".join([kepala, *baris, *self.catatan]).strip()
+
+
+@dataclass
 class KartuBelumDiketahui:
     """Data kurang → mengaku tenang (aturan #2). Bukan pesan error."""
 
@@ -490,6 +556,7 @@ Kartu = (
     | KartuRiwayat
     | KartuDokumen
     | KartuImpor
+    | KartuSkor
     | KartuBelumDiketahui
 )
 
@@ -532,6 +599,8 @@ __all__ = [
     "KartuDokumen",
     "BarisImpor",
     "KartuImpor",
+    "BarisKomponen",
+    "KartuSkor",
     "KartuBelumDiketahui",
     "Kartu",
     "PesanKeluar",

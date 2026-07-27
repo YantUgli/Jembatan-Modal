@@ -671,7 +671,10 @@ def _sama_dengan(snapshot: HppSnapshot, hasil: HasilHpp) -> bool:
 
 
 def simpan_snapshot_hpp(
-    session: Session, product_id: int, business_id: int
+    session: Session,
+    product_id: int,
+    business_id: int,
+    hasil: HasilHpp | None = None,
 ) -> HasilSimpanSnapshot:
     """Catat HPP produk apa adanya ke `hpp_snapshots`.
 
@@ -682,8 +685,15 @@ def simpan_snapshot_hpp(
     **Dedup disengaja:** kalau nilai & status tidak berubah, snapshot lama
     dipakai ulang. Margin-watch mencari *perubahan*; menulis baris identik tiap
     hari hanya mengubur sinyalnya. Karena itu fungsi ini aman dipanggil berulang.
+
+    `hasil` = HPP yang sudah terlanjur dihitung pemanggil (mis. `atur_resep`
+    baru saja menghitungnya). Dipakai ulang supaya menyimpan jejak tidak berarti
+    menghitung dua kali. ⚠️ Menyodorkannya **melewati** pemeriksaan tenant di
+    `hitung_hpp_produk`, jadi pemanggil wajib sudah memastikan produk ini milik
+    `business_id` (aturan #6). Tanpa `hasil`, pemeriksaan itu jalan di sini.
     """
-    hasil = hitung_hpp_produk(session, product_id, business_id)
+    if hasil is None:
+        hasil = hitung_hpp_produk(session, product_id, business_id)
     terakhir = snapshot_terakhir(session, product_id)
     if terakhir is not None and _sama_dengan(terakhir, hasil):
         return HasilSimpanSnapshot(snapshot=terakhir, baru=False)
@@ -699,10 +709,19 @@ def simpan_snapshot_hpp(
 
 
 def simpan_snapshot_semua(session: Session, business_id: int) -> list[HasilSimpanSnapshot]:
-    products = session.scalars(
-        select(Product).where(Product.business_id == business_id).order_by(Product.id)
-    ).all()
-    return [simpan_snapshot_hpp(session, p.id, business_id) for p in products]
+    """Snapshot seluruh produk satu usaha dalam **satu kali** hitung.
+
+    Dipakai saat yang berubah adalah *harga bahan*: bahan dipakai bersama banyak
+    produk dan menjalar lewat sub-produk, jadi tak ada cara murah menebak siapa
+    saja yang tergeser — hitung semua, biarkan dedup yang menyaring.
+
+    `hitung_hpp_semua` berbagi satu memo lintas produk, jadi sub-produk yang
+    dipakai berkali-kali hanya dihitung sekali.
+    """
+    hasil = hitung_hpp_semua(session, business_id)
+    return [
+        simpan_snapshot_hpp(session, h.product_id, business_id, hasil=h) for h in hasil
+    ]
 
 
 def riwayat_hpp(

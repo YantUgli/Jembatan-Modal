@@ -5,6 +5,48 @@
 
 ---
 
+## 2026-07-28 — Jejak HPP ditulis di titik tulis, bukan di jalur baca
+
+- **Konteks:** `hpp_snapshots` dirancang sebagai jejak historis HPP — bahan
+  margin-watch dan narasi progres di proposal KUR. Service-nya lengkap dan
+  ber-unit-test sejak slice HPP, tapi `simpan_snapshot_hpp` **tidak pernah
+  dipanggil dari kode produksi**: seluruh 7 pemanggilnya adalah test. Tabelnya
+  kosong selamanya di pemakaian nyata, dan nilainya tak bisa diisi mundur —
+  `_harga_terakhir` hanya membaca baris harga terbaru, jadi HPP lama benar-benar
+  hilang begitu harga berubah.
+
+- **Keputusan:**
+  1. **Snapshot dipasang di service layer, tepat di titik tulis** — bukan di
+     orkestrator, bukan di jalur baca.
+  2. **Cakupannya berbeda menurut sumber data HPP:**
+     - `transactions` pembelian (HPP reseller) → snapshot **produk yang tertaut
+       saja**, di `simpan_transaksi` & `terapkan_koreksi`.
+     - `cost_item_prices` (HPP produksi) → snapshot **seluruh produk usaha**, di
+       `atur_resep` & `jawab_harga_bahan`.
+  3. **Jalur baca tetap read-only.** `kartu_untung`/laporan tidak menulis apa
+     pun, dan ada test yang mengunci itu.
+  4. `simpan_snapshot_hpp` menerima `HasilHpp` yang sudah dihitung pemanggil;
+     `simpan_snapshot_semua` disusun di atas `hitung_hpp_semua` agar memo
+     rekursi sub-produk dipakai bersama.
+
+- **Alasan:** harga bahan **dipakai bersama** banyak produk dan menjalar lewat
+  sub-produk, jadi tak ada cara murah menebak siapa saja yang tergeser — hitung
+  semua, biarkan dedup menyaring. Sebaliknya pembelian selalu menunjuk satu
+  produk, jadi menyapu seluruh usaha di situ hanya pemborosan. Menaruh hook di
+  orkestrator sempat dipertimbangkan (satu titik, mustahil terlupa) tapi
+  ditolak: turn yang cuma bertanya *"untung berapa?"* jadi ikut menulis, dan
+  penulis non-chat tidak tercakup.
+
+- **Konsekuensi:**
+  - Jalur impor (`konfirmasi_impor`) dan chip koreksi kategori **tercakup tanpa
+    kode sendiri** — keduanya lewat `simpan_transaksi`/`terapkan_koreksi`.
+  - `app/services/catat.py` sekarang mengimpor `app/services/hpp.py` (tak ada
+    siklus: `hpp` hanya menuju `harga`/`angka`/`models`).
+  - ⛔ **Jangan** memasang hook di dalam `catat_harga_bahan`: `atur_resep`
+    memanggilnya dalam loop per bahan → snapshot akan jalan N× per turn.
+  - `riwayat_hpp` masih tanpa pemanggil produksi. Menampilkannya (*"modal naik
+    Rp500 sejak 20 Juli"*) = slice berikutnya, butuh kontrak kartu baru.
+
 ## 2026-07-27 — Sumbu waktu: periode dibaca kode, dan kartu wajib menyebut periodenya
 
 - **Konteks:** sampai slice ini seluruh produk hanya bisa menjawab satu periode,

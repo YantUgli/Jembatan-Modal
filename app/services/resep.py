@@ -37,7 +37,12 @@ from app.models import (
 )
 from app.services.angka import _dec, _uang, rupiah
 from app.services.entitas import _normalisasi_nama, resolusi_cost_item, resolusi_produk
-from app.services.hpp import HasilHpp, StatusHpp, hitung_hpp_produk
+from app.services.hpp import (
+    HasilHpp,
+    StatusHpp,
+    hitung_hpp_produk,
+    simpan_snapshot_semua,
+)
 
 __all__ = [
     "HasilAturResep",
@@ -205,6 +210,11 @@ def atur_resep(
             )
 
     hasil = hitung_hpp_produk(session, produk.id, business_id)
+
+    # Bukan cuma produk ini: harga bahan yang baru diserap/ditanya di atas dipakai
+    # bersama produk lain, dan menjalar lewat sub-produk. Snapshot seluruh usaha.
+    simpan_snapshot_semua(session, business_id)
+
     return HasilAturResep(
         product_id=produk.id,
         nama=produk.nama,

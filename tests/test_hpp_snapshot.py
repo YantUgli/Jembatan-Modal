@@ -1,4 +1,11 @@
-"""Unit test memo rekursi (P3) & snapshot HPP (P4)."""
+"""Unit test memo rekursi (P3) & snapshot HPP (P4).
+
+Bagian terakhir berkas ini menguji sesuatu yang berbeda dari bagian sebelumnya:
+bukan *apakah* `simpan_snapshot_hpp` benar, melainkan **apakah ia benar-benar
+dipanggil** dari jalur yang dipakai pengguna. Service yang benar tapi tak pernah
+terpanggil tetap berarti tabelnya kosong selamanya — dan HPP lama tidak bisa
+diisi mundur, karena yang tersimpan hanya harga terbaru.
+"""
 
 from __future__ import annotations
 
@@ -8,8 +15,14 @@ from unittest.mock import patch
 
 import pytest
 
-from app.models import HppSnapshot, JenisProduk
+from app.impor import YAKIN, BarisDraft
+from app.kanal.orkestrator import kartu_untung
+from app.llm.palsu import AdapterPalsu
+from app.llm.skema import AksiKoreksi, BarisTransaksi, Koreksi
+from app.models import HppSnapshot, JenisProduk, JenisTransaksi
 from app.services import hpp as svc
+from app.services.catat import simpan_transaksi, terapkan_koreksi
+from app.services.entitas import cari_produk
 from app.services.hpp import (
     StatusHpp,
     cakupan_hpp,
@@ -20,7 +33,16 @@ from app.services.hpp import (
     simpan_snapshot_semua,
     snapshot_terakhir,
 )
-from tests.conftest import buat_material, buat_produk, buat_resep, set_harga
+from app.services.impor import buat_draft, konfirmasi_impor, terima_yakin
+from app.services.resep import atur_resep
+from app.tools.resep import jawab_harga_bahan
+from tests.conftest import (
+    buat_material,
+    buat_produk,
+    buat_resep,
+    buat_transaksi,
+    set_harga,
+)
 
 HARI = date(2026, 6, 1)
 
@@ -226,3 +248,236 @@ def test_snapshot_isolasi_tenant(session, business, tetangga):
 def test_snapshot_terakhir_kosong(session, business):
     risol, _ = _risol(session, business)
     assert snapshot_terakhir(session, risol.id) is None
+
+
+# ── P4: snapshot benar-benar tertulis di jalur nyata ────────────────────────
+#
+# Tiap test di bawah menghitung baris `hpp_snapshots` secara langsung. Memeriksa
+# nilai kembalian service saja tidak cukup: bug yang kita takutkan justru bug
+# yang mengembalikan HPP dengan rapi *sambil* tidak menulis jejaknya sama sekali.
+
+
+def _snapshots(session, product_id: int | None = None) -> list[HppSnapshot]:
+    """Seluruh tabel, bukan per-tenant: kalau ada yang bocor, kita mau tahu."""
+    baris = session.query(HppSnapshot).order_by(HppSnapshot.id).all()
+    return [s for s in baris if product_id is None or s.product_id == product_id]
+
+
+def _beli(nominal, **kw) -> BarisTransaksi:
+    return BarisTransaksi(
+        jenis=JenisTransaksi.pengeluaran, nominal=Decimal(nominal), tanggal=HARI, **kw
+    )
+
+
+def _nugget(session, business):
+    """Reseller: HPP-nya = harga beli terakhir, jadi tiap pembelian menggesernya."""
+    return buat_produk(
+        session, business, "nugget", JenisProduk.reseller,
+        harga_jual=30_000, satuan_beli="pack", satuan_jual="pack",
+    )
+
+
+def test_pembelian_reseller_menulis_snapshot(session, business):
+    nugget = _nugget(session, business)
+
+    simpan_transaksi(
+        session, business.id,
+        [_beli("250000", produk="nugget", qty=Decimal("10"), satuan="pack")],
+        "beli nugget 10 pack 250rb",
+    )
+
+    (snap,) = _snapshots(session)
+    assert snap.product_id == nugget.id
+    assert snap.hpp_per_unit == Decimal("25000.00")  # 250.000 ÷ 10
+    assert snap.rincian["status"] == "lengkap"
+
+
+def test_pembelian_kedua_harga_berbeda_menambah_snapshot(session, business):
+    """Inti kebocorannya: tanpa ini, harga beli lama hilang tanpa bekas."""
+    _nugget(session, business)
+    simpan_transaksi(
+        session, business.id,
+        [_beli("250000", produk="nugget", qty=Decimal("10"), satuan="pack")],
+        "beli nugget 10 pack 250rb",
+    )
+
+    simpan_transaksi(
+        session, business.id,
+        [
+            BarisTransaksi(
+                jenis=JenisTransaksi.pengeluaran, nominal=Decimal("300000"),
+                tanggal=date(2026, 7, 1), produk="nugget",
+                qty=Decimal("10"), satuan="pack",
+            )
+        ],
+        "beli nugget 10 pack 300rb",
+    )
+
+    assert [s.hpp_per_unit for s in _snapshots(session)] == [
+        Decimal("25000.00"),
+        Decimal("30000.00"),
+    ]
+
+
+def test_pembelian_harga_sama_tidak_menggandakan_snapshot(session, business):
+    """Dedup tetap berlaku di jalur nyata — margin-watch mencari *perubahan*."""
+    _nugget(session, business)
+    for _ in range(2):
+        simpan_transaksi(
+            session, business.id,
+            [_beli("250000", produk="nugget", qty=Decimal("10"), satuan="pack")],
+            "beli nugget 10 pack 250rb",
+        )
+
+    assert len(_snapshots(session)) == 1
+
+
+def test_transaksi_tanpa_produk_tidak_menulis_snapshot(session, business):
+    """Prive, operasional, dan belanja tak dikenal tak menggeser HPP siapa pun."""
+    simpan_transaksi(
+        session, business.id,
+        [
+            BarisTransaksi(
+                jenis=JenisTransaksi.prive, nominal=Decimal("50000"), tanggal=HARI
+            ),
+            BarisTransaksi(
+                jenis=JenisTransaksi.operasional, nominal=Decimal("20000"),
+                tanggal=HARI, produk="listrik",
+            ),
+        ],
+        "ambil 50rb buat belanja rumah, bayar listrik 20rb",
+    )
+
+    assert _snapshots(session) == []
+
+
+def test_pembatalan_pembelian_menulis_snapshot(session, business):
+    """Kembali ke "belum diketahui" pun jejak yang sah (aturan #2)."""
+    _nugget(session, business)
+    hasil = simpan_transaksi(
+        session, business.id,
+        [_beli("250000", produk="nugget", qty=Decimal("10"), satuan="pack")],
+        "beli nugget 10 pack 250rb",
+    )
+    (beli,) = hasil.tersimpan
+
+    terapkan_koreksi(
+        session, business.id, beli, Koreksi(aksi=AksiKoreksi.batal), raw_text="salah catat"
+    )
+
+    pertama, kedua = _snapshots(session)
+    assert pertama.hpp_per_unit == Decimal("25000.00")
+    assert kedua.hpp_per_unit is None
+    assert kedua.rincian["status"] == "belum_ada_harga_beli"
+
+
+def test_koreksi_nominal_pembelian_menulis_snapshot(session, business):
+    _nugget(session, business)
+    hasil = simpan_transaksi(
+        session, business.id,
+        [_beli("250000", produk="nugget", qty=Decimal("10"), satuan="pack")],
+        "beli nugget 10 pack 250rb",
+    )
+    (beli,) = hasil.tersimpan
+
+    terapkan_koreksi(
+        session, business.id, beli,
+        Koreksi(aksi=AksiKoreksi.ubah, nominal=Decimal("200000")),
+        raw_text="bukan 250rb, 200rb",
+    )
+
+    assert [s.hpp_per_unit for s in _snapshots(session)] == [
+        Decimal("25000.00"),
+        Decimal("20000.00"),
+    ]
+
+
+def test_atur_resep_menulis_snapshot(session, business):
+    hasil = atur_resep(
+        session, business.id, "risol", Decimal("10"), "kotak",
+        [("tepung", Decimal("1"), "kg")], HARI,
+        harga_bahan={"tepung": (Decimal("13000"), "kg")},
+    )
+
+    (snap,) = _snapshots(session)
+    assert snap.product_id == hasil.product_id
+    assert snap.hpp_per_unit == Decimal("1300.00")
+
+
+def test_harga_bahan_menyusul_menulis_snapshot_produk_lain(session, business):
+    """Harga bahan dipakai bersama — produk lain ikut tergeser, ikut tercatat.
+
+    Ini yang membedakan `simpan_snapshot_semua` dari snapshot per-produk: tepung
+    naik bukan cuma urusan produk yang sedang ditanyakan.
+    """
+    tepung = buat_material(session, business, "tepung", "kg")  # sengaja tanpa harga
+    risol = buat_produk(session, business, "risol", JenisProduk.produksi, harga_jual=15_000)
+    buat_resep(session, risol, 10, [(tepung, 1, "kg")], yield_satuan="kotak")
+    kroket = buat_produk(session, business, "kroket", JenisProduk.produksi, harga_jual=15_000)
+    buat_resep(session, kroket, 5, [(tepung, 1, "kg")], yield_satuan="kotak")
+
+    simpan_snapshot_semua(session, business.id)  # garis dasar: dua-duanya "belum lengkap"
+    assert len(_snapshots(session)) == 2
+
+    teks = "tepung sekilo 13rb"
+    adapter = AdapterPalsu(
+        jawaban_ekstrak={teks: {"nominal": 13000, "qty": 1, "satuan": "kg"}}
+    )
+    jawab_harga_bahan(session, adapter, business.id, risol.id, "tepung", teks, HARI)
+
+    assert _snapshots(session, risol.id)[-1].hpp_per_unit == Decimal("1300.00")
+    assert _snapshots(session, kroket.id)[-1].hpp_per_unit == Decimal("2600.00")
+
+
+def test_impor_dikonfirmasi_menulis_snapshot(session, business):
+    """Jalur impor tercakup tanpa kode sendiri — ia lewat `simpan_transaksi`."""
+    _nugget(session, business)
+    impor = buat_draft(
+        session, business.id, "teks",
+        [
+            BarisDraft(
+                raw="beli nugget 10 pack 250rb",
+                baris=_beli("250000", produk="nugget", qty=Decimal("10"), satuan="pack"),
+                keyakinan=YAKIN,
+            )
+        ],
+    )
+    terima_yakin(session, business.id, impor.id)
+    assert _snapshots(session) == []  # draft belum menyentuh apa pun (aturan #3)
+
+    konfirmasi_impor(session, business.id, impor.id)
+
+    (snap,) = _snapshots(session)
+    assert snap.hpp_per_unit == Decimal("25000.00")
+
+
+def test_jalur_baca_tidak_menulis_snapshot(session, business):
+    """Pagar arsitektur: bertanya "untung berapa?" tak boleh menulis apa pun."""
+    nugget = _nugget(session, business)
+    buat_transaksi(
+        session, business, JenisTransaksi.pengeluaran, 250_000, HARI,
+        product=nugget, qty=Decimal("10"), satuan="pack",
+    )
+
+    kartu_untung(session, business.id, date(2026, 6, 1), date(2026, 6, 30))
+
+    assert _snapshots(session) == []
+
+
+def test_snapshot_jalur_nyata_tidak_bocor_antar_tenant(session, business, tetangga):
+    """Aturan #6: menulis di satu usaha tak menyentuh snapshot usaha lain."""
+    buat_produk(
+        session, tetangga, "nugget", JenisProduk.reseller,
+        satuan_beli="pack", satuan_jual="pack",
+    )
+    _nugget(session, business)
+
+    simpan_transaksi(
+        session, business.id,
+        [_beli("250000", produk="nugget", qty=Decimal("10"), satuan="pack")],
+        "beli nugget 10 pack 250rb",
+    )
+
+    milik_tetangga = cari_produk(session, tetangga.id, "nugget")
+    assert _snapshots(session, milik_tetangga.id) == []
+    assert len(_snapshots(session)) == 1

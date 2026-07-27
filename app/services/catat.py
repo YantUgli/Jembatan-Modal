@@ -27,6 +27,7 @@ from app.models import JenisTransaksi, SumberInput, Transaction
 from app.services.angka import _dec, _uang, rupiah
 from app.services.entitas import adopsi_pembelian_yatim, cari_produk, resolusi_produk
 from app.services.harga import catat_harga_jual_dari_penjualan
+from app.services.hpp import simpan_snapshot_hpp
 
 __all__ = [
     "HasilKoreksi",
@@ -113,7 +114,26 @@ def simpan_transaksi(
         tersimpan.append(t)
     session.flush()
 
+    _rekam_jejak_hpp(session, business_id, tersimpan)
+
     return HasilPencatatan(tersimpan=tersimpan, konfirmasi=_konfirmasi(baris))
+
+
+def _rekam_jejak_hpp(
+    session: Session, business_id: int, baris: list[Transaction]
+) -> None:
+    """Catat HPP produk yang tersentuh ke `hpp_snapshots` (jejak historis).
+
+    HPP reseller = harga beli terakhir, jadi setiap pembelian yang tertaut produk
+    menggesernya. Tanpa dipanggil di sini nilai lamanya hilang tanpa bekas —
+    tak bisa diisi mundur, karena yang tersimpan hanya harga terbaru.
+
+    Transaksi tanpa `product_id` (belanja tak dikenal, operasional, prive) tidak
+    menggeser HPP siapa pun, jadi dilewati. Dedup di `simpan_snapshot_hpp` yang
+    memutuskan apakah baris baru benar-benar ditulis.
+    """
+    for product_id in dict.fromkeys(t.product_id for t in baris if t.product_id):
+        simpan_snapshot_hpp(session, product_id, business_id)
 
 
 def _tautkan_entitas(
@@ -275,6 +295,9 @@ def terapkan_koreksi(
 
     if koreksi.aksi is AksiKoreksi.batal:
         session.flush()
+        # Membatalkan pembelian ikut menggeser HPP — bisa sampai kembali "belum
+        # diketahui" kalau itu satu-satunya pembelian. Itu pun jejak yang sah.
+        _rekam_jejak_hpp(session, business_id, [lama])
         return HasilKoreksi(
             dibatalkan=lama,
             konfirmasi=f"Sudah dihapus:\n• {sebelum}",
@@ -298,6 +321,9 @@ def terapkan_koreksi(
     )
     session.add(baru)
     session.flush()
+
+    # `baru.product_id` diwarisi dari `lama`, jadi satu produk sudah cukup.
+    _rekam_jejak_hpp(session, business_id, [lama, baru])
 
     return HasilKoreksi(
         dibatalkan=lama,

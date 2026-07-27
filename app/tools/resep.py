@@ -26,6 +26,7 @@ from app.llm.skema import JawabHarga, instruksi_harga
 from app.models import Product, SumberHarga
 from app.services.angka import _dec, _uang
 from app.services.entitas import cari_cost_item
+from app.services.hpp import simpan_snapshot_semua
 from app.services.resep import (
     HasilAturResep,
     atur_resep,
@@ -119,4 +120,9 @@ def jawab_harga_bahan(
         session, business_id, ci.id, harga_satuan, jawab.satuan, hari_ini,
         sumber=SumberHarga.ditanya,
     )
+
+    # Harga bahan dipakai bersama produk lain — snapshot seluruh usaha, bukan
+    # hanya produk yang sedang ditanyakan.
+    simpan_snapshot_semua(session, business_id)
+
     return rangkai_hasil(session, business_id, product_id)

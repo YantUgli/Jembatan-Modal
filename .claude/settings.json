@@ -81,7 +81,17 @@
       "Bash(curl -s -X POST http://127.0.0.1:8000/masuk -H 'content-type: application/json' -d '{\"no_hp\":\"08120000001\",\"pin\":\"123456\"}')",
       "Bash(PIPENV_IGNORE_VIRTUALENVS=1 PIPENV_VERBOSITY=-1 pipenv run python -)",
       "Bash(PIPENV_IGNORE_VIRTUALENVS=1 PIPENV_VERBOSITY=-1 pipenv run pytest --collect-only -q)",
-      "Bash(PIPENV_IGNORE_VIRTUALENVS=1 PIPENV_VERBOSITY=-1 pipenv run pytest)"
+      "Bash(PIPENV_IGNORE_VIRTUALENVS=1 PIPENV_VERBOSITY=-1 pipenv run pytest)",
+      "Bash(wsl.exe -d Ubuntu -- ls -la /home/bryant/.local/bin/codebase-memory-mcp)",
+      "Bash(wsl.exe -d Ubuntu -- /home/bryant/.local/bin/codebase-memory-mcp --version)",
+      "PowerShell(wsl.exe -d Ubuntu -- ls -la /home/bryant/.local/bin/codebase-memory-mcp)",
+      "PowerShell(wsl.exe -d Ubuntu -- /home/bryant/.local/bin/codebase-memory-mcp --version)",
+      "PowerShell(pipenv run python -c \"import app.services.catat, app.services.resep, app.tools.resep, app.kanal.orkestrator; print\\('impor ok'\\)\")",
+      "PowerShell(pipenv run pytest tests/test_hpp_snapshot.py -q 2>&1)",
+      "PowerShell(pipenv run pytest -q 2>&1)",
+      "PowerShell(foreach \\($f in @\\(\"app/services/hpp.py\",\"app/services/catat.py\",\"app/services/resep.py\",\"app/tools/resep.py\",\"tests/test_hpp_snapshot.py\"\\)\\) { $out = git show \"HEAD:$f\" | pipenv run ruff format --check - 2>&1 | Out-String; if \\($out -match \"would be reformatted|Would reformat\"\\) { \"PRA-ADA drift: $f\" } else { \"bersih di HEAD:  $f\" } })",
+      "PowerShell(pipenv run ruff format --check app/services/hpp.py app/services/catat.py app/services/resep.py app/tools/resep.py tests/test_hpp_snapshot.py 2>&1 | Select-String -Pattern \"reformat\"; \"--- sekarang cek versi HEAD ---\"; git show HEAD:app/services/catat.py | Out-File -Encoding utf8 \"$env:TEMP\\\\head_catat.py\"; git show HEAD:tests/test_hpp_snapshot.py | Out-File -Encoding utf8 \"$env:TEMP\\\\head_snap.py\"; pipenv run ruff format --check \"$env:TEMP\\\\head_catat.py\" \"$env:TEMP\\\\head_snap.py\" 2>&1 | Select-String -Pattern \"reformat\")",
+      "PowerShell(\"---\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\bryant\\.claude\\projects\\c--project-Jembatan-Modal\\memory"

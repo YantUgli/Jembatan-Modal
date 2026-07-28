@@ -5,6 +5,67 @@
 
 ---
 
+## 2026-07-28 — Snapshot skor harian dipicu lazy di `/sesi` (E1)
+
+- **Konteks:** `simpan_snapshot_skor` (`app/services/skor.py`) sudah ditulis &
+  diuji sejak Tahap 4b tapi nol pemanggil produksi (`docs/04-rencana-kerja.md`
+  baris 120; `docs/plan-lanjutan.md` §E1). `kartu_skor` (jalur baca `tanya_skor`)
+  sengaja **tidak** memanggilnya — menulis tiap kali kartu dibuka akan
+  membanjiri riwayat dengan snapshot periode-bergeser. Plan `plan-lanjutan.md`
+  melewatkan pertanyaan hulu: **untuk apa riwayat ini dipakai** menentukan
+  apakah drift kalender harian itu sinyal (valid utk grafik tren) atau noise
+  (butuh snapshot bersyarat-perubahan). Ditanyakan ke pengguna sebelum
+  memilih pemicu (aturan main sesi ini: jangan berimprovisasi keputusan yang
+  plan sendiri tandai butuh manusia).
+
+- **Keputusan:**
+  1. **Riwayat skor dipakai untuk grafik tren** — drift 30-hari-bergulir
+     (skor bisa bergeser murni karena kalender, tanpa transaksi baru) memang
+     bagian dari yang ingin ditunjukkan, bukan dikecualikan.
+  2. **Pemicu: lazy-daily di `GET /sesi`** (bukan `/chat`, bukan proses
+     cron/scheduler terpisah). `/sesi` dipanggil sekali per kunjungan
+     (pembuka layar chat) — pemicu paling alami untuk "sekali per hari" tanpa
+     menambah komponen infrastruktur baru yang belum ada presedennya di
+     repo ini, dan tidak menumpangi jalur `/chat` yang sudah menangani banyak
+     aksi lain.
+  3. **Tanpa pre-check "sudah ada snapshot hari ini"** — dipanggil
+     unconditional tiap `/sesi`: `hitung_skor` lalu `simpan_snapshot_skor`.
+     Dedup nilai-identik yang sudah ada di `simpan_snapshot_skor` sendiri
+     cukup mencegah pembanjiran baris saat nilai tak berubah; saat nilai
+     berubah intraday (transaksi baru dicatat lalu `/sesi` dibuka lagi hari
+     yang sama), baris baru yang tertulis justru diinginkan untuk grafik tren
+     yang mutakhir.
+
+- **Alasan:** butir 1 mengubah premis "opsi A/B/C" plan lama — snapshot
+  periode-bergeser yang tadinya dikira "mengubur sinyal delta" (alasan
+  `kartu_skor` tidak menulis di jalur baca) ternyata justru sinyal yang
+  diinginkan **di jalur riwayat/grafik**, beda dari jalur baca satu-kartu yang
+  memang cuma butuh delta-vs-periode-lain. Butir 2 dipilih atas alternatif
+  `/chat` (lebih sering terpanggil tapi jalur yang sudah menangani banyak
+  aksi lain, bukan jalur "pembuka sesi") dan proses terjadwal terpisah
+  (paling bersih tapi menambah infrastruktur yang tak diperlukan untuk
+  kebutuhan ini). Butir 3 karena menambah pre-check periode akan menahan
+  update intraday yang justru berguna untuk tren, padahal dedup nilai-identik
+  yang sudah ada cukup mencegah baris duplikat sia-sia — pre-check tambahan
+  hanya kompleksitas tanpa manfaat baru.
+
+- **Konsekuensi:**
+  - `app/api/main.py`: `GET /sesi` dapat parameter `session` (sebelumnya
+    hanya `business`), memanggil `hitung_skor` + `simpan_snapshot_skor`
+    sebelum mengembalikan kartu sapaan seperti biasa.
+  - `tests/test_api_sesi.py` (baru): snapshot benar-benar terbaca dari
+    storage setelah `/sesi` (bukan mock), dedup tetap berlaku dari jalur
+    produksi ini, snapshot tetap ditulis saat skor belum diketahui (usaha
+    baru tanpa transaksi), isolasi tenant, dan regresi kontrak kartu sapaan.
+  - `pytest tests/test_api_sesi.py -q` (5 test) + `pytest tests/ -q`
+    (340 test) hijau.
+  - Snapshot bisa bertambah lebih dari satu baris per hari kalender bila
+    nilai skor berubah intraday — ini disengaja (butir 3), bukan bug; kalau
+    kelak grafik tren butuh "satu titik per hari", agregasinya dikerjakan
+    saat query untuk grafik, bukan dengan menahan penulisan di sini.
+
+---
+
 ## 2026-07-28 — Topik agunan KUR: entri kedua yang seed langsung aktif — pengecualian, bukan preseden (E2)
 
 - **Konteks:** `docs/plan-lanjutan.md` §E2 minta topik `agunan` ditambah ke asisten

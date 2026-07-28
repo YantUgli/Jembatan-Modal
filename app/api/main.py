@@ -55,6 +55,7 @@ from app.services.auth import (
 from app.services.impor import TidakBisaDiterima
 from app.services.panduan_kur import KategoriKur, KonteksBunga, SektorUsaha
 from app.services.periode import Periode, periode_dari_label
+from app.services.skor import hitung_skor, simpan_snapshot_skor
 
 app = FastAPI(title="JembatanModal — API chat", version="0.1.0")
 
@@ -253,8 +254,23 @@ def keluar(
 
 
 @app.get("/sesi")
-def sesi(business: Business = Depends(business_saat_ini)) -> dict:
-    """Kartu pembuka untuk memulai layar chat."""
+def sesi(
+    business: Business = Depends(business_saat_ini),
+    session: Session = Depends(dapatkan_sesi),
+) -> dict:
+    """Kartu pembuka untuk memulai layar chat.
+
+    Juga pemicu snapshot skor harian (E1, `docs/keputusan.md` 2026-07-28):
+    riwayat `score_snapshots` dipakai untuk **grafik tren**, jadi drift
+    kalender (skor 30-hari-bergulir bergeser tiap hari walau tanpa transaksi
+    baru) memang sinyal yang ingin ditunjukkan — bukan alasan untuk melewati
+    penulisan. Dipilih "lazy": menumpang request yang sudah terjadi wajar
+    sekali per kunjungan, bukan proses cron/scheduler baru yang belum ada
+    presedennya di repo ini. `simpan_snapshot_skor` sendiri sudah dedup nilai
+    identik, jadi memanggilnya berkali-kali sehari tidak membanjiri riwayat.
+    """
+    hasil_skor = hitung_skor(session, business.id, date.today())
+    simpan_snapshot_skor(session, business.id, hasil_skor)
     return sapaan(business).ke_dict()
 
 

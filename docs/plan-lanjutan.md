@@ -47,9 +47,17 @@ konsisten dengan keputusan yang tercatat.
 
 ## E1 — Catat snapshot skor secara berkala
 
-**Status: perlu keputusan desain sebelum mulai — lihat pertanyaan di bagian akhir.**
+**Status: SELESAI (2026-07-28)** — lihat `docs/keputusan.md` 2026-07-28
+("Snapshot skor harian dipicu lazy di `/sesi`"). Jawaban pertanyaan hulu:
+riwayat dipakai untuk **grafik tren** (drift kalender = sinyal, bukan noise),
+pemicu = **lazy-daily di `GET /sesi`**, tanpa pre-check "sudah ada snapshot
+hari ini" (dedup nilai-identik `simpan_snapshot_skor` sudah cukup). Implementasi:
+`app/api/main.py` (`sesi()` dapat parameter `session`, memanggil `hitung_skor`
++ `simpan_snapshot_skor`), `tests/test_api_sesi.py` (baru, 5 test). Sisa
+dokumen di bawah ini (opsi A/B/C) dibiarkan sebagai catatan riwayat kenapa
+opsi lain tidak dipilih — bukan tugas terbuka lagi.
 
-### Precondition
+### Precondition (historis — sudah terpenuhi)
 Pilih titik pemicu (lihat "Opsi" di bawah) — **jangan mulai coding sebelum ini
 dipilih**, karena pilihan menentukan file yang disentuh.
 
@@ -230,15 +238,21 @@ tergoda mulai duluan karena "kelihatan mudah setelah B3".
 
 ---
 
-## Pertanyaan untuk direview bersama plan ini
+## Pertanyaan yang sudah dijawab (riwayat)
 
-1. **E1 (skor snapshot)** — opsi pemicu mana yang dipilih: (A) lazy-daily di
-   `/sesi`, (B) lazy-daily di `/chat`, atau (C) proses terjadwal terpisah?
-   Ini menentukan file yang disentuh sebelum tugas bisa dimulai.
-2. Apakah **E1 dan E2** dikerjakan sebagai dua slice terpisah (dua commit,
-   sesuai konvensi "satu tugas satu commit"), atau ada urutan prioritas di
-   antara keduanya yang perlu diperjelas?
-3. `docs/PLAN_EKSEKUSI_CLAUDE_CODE.md` dan `docs/regulasi/2026PemenkoEkon001.pdf`
-   masih **untracked** di git — apakah keduanya di-`git add` sekarang (di luar
-   scope coding E1/E2), mengingat E2 bergantung pada data terverifikasi di
-   dalamnya?
+Ketiga pertanyaan di draf awal dokumen ini sudah dijawab & dieksekusi
+2026-07-28:
+
+1. **E1 pemicu** — lazy-daily di `/sesi` (dipilih atas `/chat` dan proses
+   terjadwal terpisah setelah pertanyaan hulu "untuk apa riwayat ini dipakai"
+   dijawab: grafik tren). Lihat `docs/keputusan.md`.
+2. **E1 & E2 sebagai dua commit terpisah** — dikerjakan berurutan E2 dulu
+   (tak ada pertanyaan desain terbuka) lalu E1 (`e3cc4d0` lalu commit E1
+   berikutnya), bukan digabung.
+3. **Gerbang 0** — `docs/PLAN_EKSEKUSI_CLAUDE_CODE.md` +
+   `docs/regulasi/2026PemenkoEkon001.pdf` di-`git add` sebagai commit
+   tersendiri (`aecd81e`) sebelum E2 disentuh, persis karena E2 bergantung
+   pada data terverifikasi di dalamnya.
+
+Tidak ada pertanyaan terbuka baru dari E1/E2 selain follow-up bernama F2
+(lihat "Ditahan" di atas) dan kandidat F1 (belum di-scope, lihat di atas).

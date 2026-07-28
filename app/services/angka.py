@@ -7,9 +7,14 @@ perhitungan mana pun.
 
 from __future__ import annotations
 
-from decimal import ROUND_HALF_UP, Decimal
+import re
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 DUA_DESIMAL = Decimal("0.01")
+
+# Karakter selain digit/koma/titik/minus dibuang — menyapu "Rp", spasi ribuan,
+# dan kotoran lain dari salinan CSV/rekening koran sekaligus.
+_BUKAN_ANGKA = re.compile(r"[^0-9,.\-]")
 
 
 def _dec(x) -> Decimal:
@@ -53,6 +58,40 @@ def persen(x) -> str:
     di layar dan di dokumen (aturan #2).
     """
     return f"{_rapikan(_dec(x))}%"
+
+
+def angka_rupiah(teks: str | None) -> Decimal | None:
+    """Angka gaya Indonesia (teks bebas) → `Decimal`, atau `None` bila tak terbaca.
+
+    Konvensi Indonesia yang dipakai, **tanpa kecuali**: titik selalu pemisah
+    ribuan, koma selalu pemisah desimal. `"1.250.000,50"` → 1250000.50;
+    `"1.000"` → 1000 (bukan 1.0) — titik di sana bukan desimal, walau posisinya
+    mirip notasi Inggris. Dipakai jalur impor CSV (§5 rencana eksekusi): angka
+    dari rekening koran/pembukuan tak boleh salah baca cuma karena beda gaya
+    pemisah.
+
+    String kosong/tak terbaca → `None` (aturan #2: mengaku, bukan mengarang),
+    **tidak pernah** melempar exception — baris CSV yang rusak tidak boleh
+    menghentikan seluruh impor (lihat filosofi `ParserTeks`: satu baris busuk
+    tidak membunuh baris lain).
+    """
+    if teks is None:
+        return None
+    bersih = _BUKAN_ANGKA.sub("", teks.strip())
+    if not bersih or bersih in {"-", ".", ","}:
+        return None
+
+    tanda = ""
+    if bersih.startswith("-"):
+        tanda, bersih = "-", bersih[1:]
+    if bersih.count(",") > 1 or not bersih:
+        return None
+
+    bersih = bersih.replace(".", "").replace(",", ".")
+    try:
+        return Decimal(tanda + bersih)
+    except InvalidOperation:
+        return None
 
 
 def _rapikan(x: Decimal) -> str:

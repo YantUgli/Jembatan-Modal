@@ -5,6 +5,53 @@
 
 ---
 
+## 2026-07-28 — Impor CSV generik berhenti di struktur, bukan sampai transaksi (B3)
+
+- **Konteks:** P2 impor (~35%) hanya punya adaptor teks tempelan. Rencana
+  eksekusi §5 B3 minta pipa unggah CSV generik dibangun sekarang, tapi
+  pemetaan kolom spesifik per format (rekening koran bank, ekspor QRIS/
+  e-wallet, CSV pembukuan) **ditahan** sampai ada fixture asli (A3) — kalau
+  dipaksakan dari asumsi bentuk berkas, risikonya rework total begitu bentuk
+  aslinya ternyata beda.
+
+- **Keputusan:** `app/impor/csv_generik.py` dibangun sampai batas **struktur**
+  saja: `baca_csv_generik` memvalidasi berkas (ekstensi `.csv`, ukuran ≤5MB,
+  isi tidak kosong), mendeteksi encoding (`utf-8-sig`→`utf-8`→`cp1252`→
+  `latin-1` sebagai jaring terakhir yang tak pernah gagal), mendeteksi
+  pemisah kolom (`csv.Sniffer` + fallback hitung-konsistensi), dan mendeteksi
+  baris header (`csv.Sniffer.has_header` + fallback asumsikan-ada-header).
+  Titik pemetaan kolom→`BarisTransaksi` ada sebagai `petakan_baris_generik`
+  yang sengaja melempar `NotImplementedError` menyebut fixture A3 — bukan
+  diam-diam menebak. `angka_rupiah()` (`app/services/angka.py`) ditambahkan
+  terpisah: parser angka gaya Indonesia (titik=ribuan, koma=desimal) yang
+  dibutuhkan begitu pemetaan kolom akhirnya ditulis.
+  Wiring ke endpoint HTTP unggah (`UploadFile`) **belum** dibuat — butuh
+  dependency baru `python-multipart` yang belum terpasang; ini murni lapisan
+  layanan (`baca_csv_generik(nama_berkas, data: bytes)`) yang teruji tanpa
+  FastAPI sama sekali.
+
+- **Alasan:** Struktur berkas (encoding/pemisah/header) tidak butuh tahu
+  formatnya — itu bisa dibangun & diuji sekarang dengan percaya diri. Memetakan
+  kolom BUTUH tahu formatnya, dan setiap sumber (bank/e-wallet/pembukuan
+  manual) punya kolom yang beda tempat & beda nama. `docs/02-arsitektur.md`
+  membayangkan pemetaan ini lewat LLM (kolom bebas → skema kita), bukan aturan
+  hardcode per-platform — tapi menulis logika itu pun dari asumsi berisiko
+  sama seperti menulis aturan hardcode dari asumsi: keduanya bisa salah kalau
+  fixture aslinya ternyata beda bentuk.
+
+- **Konsekuensi:**
+  - `pytest tests/test_impor_csv_generik.py tests/test_angka_rupiah.py -q`
+    hijau (32 test) — termasuk kasus encoding non-UTF-8, pemisah `;`/tab,
+    baris tanpa header, baris ragged, dan tabel kasus angka Rupiah lengkap.
+  - `parser_untuk()` (`app/tools/impor.py`) **belum** menerima sumber `"csv"`
+    — CSV belum bisa masuk ke alur draft/`import_rows` sampai
+    `petakan_baris_generik` diimplementasikan pasca-A3.
+  - Endpoint HTTP unggah menyusul terpisah begitu ada konsumen nyata
+    (pemetaan) untuk hasilnya — membangunnya sekarang hanya akan jadi
+    permukaan API yang menganggur.
+
+---
+
 ## 2026-07-28 — Asisten KUR (4c) slice pertama: `tanya_kur` aksi terstruktur, guard wired (C1+C2)
 
 - **Konteks:** D1 (di bawah) menaikkan entri bunga KUR ke `aktif`, jadi router

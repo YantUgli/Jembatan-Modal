@@ -92,6 +92,14 @@ Target akhir tahap: **pengguna tahu untung bersih per produk yang jujur.**
 - [x] Alur draft: parse → `import_rows` (draft) → tinjau → centang → `konfirmasi_impor` → commit. Commit memakai ulang `simpan_transaksi` (`sumber_input=impor`), jadi penautan produk & umpan HPP ikut jalan — **tak ada jalur tulis kedua**. Unggah berkas menyusul bersama adaptor foto.
 - [x] **Aturan keras: tidak pernah auto-commit.** Uji negatif terpasang di tiga lapisan (`test_impor.py`, `test_kanal_impor.py`, `test_api_impor.py`). ⚠️ Pagarnya **juga** di `tangani_pesan`: tempelan ≥3 baris di kotak chat dibelokkan ke draft — tanpa itu, menempel satu halaman buku tulis = impor auto-commit lewat jalur pencatatan ([keputusan.md](keputusan.md) 2026-07-26).
 - [ ] Adaptor #1 — **foto buku tulis / screenshot** (vision). Paling relevan untuk segmen mikro. ⚠️ **Urutan diubah sadar:** adaptor pertama yang jadi justru **tempelan teks** (`app/impor/teks.py`), karena fixture berkas nyata masih utang Tahap 0 — uji vision hari ini hanya akan menguji gambar karangan sendiri. Foto masuk ke slot `Parser` yang sama tanpa mengubah alur.
+- [x] Pipa CSV generik (2026-07-28, §5 B3 rencana eksekusi): `baca_csv_generik`
+  (`app/impor/csv_generik.py`) — validasi berkas, deteksi encoding/pemisah
+  kolom/baris header. **Berhenti di struktur**, belum sampai `BarisDraft`:
+  pemetaan kolom→transaksi (`petakan_baris_generik`) sengaja `NotImplementedError`
+  sampai ada fixture A3 asli — lihat `docs/keputusan.md` 2026-07-28. Util
+  angka Rupiah (`angka_rupiah`, `app/services/angka.py`) sudah siap dipakai
+  begitu pemetaan itu ditulis. Belum ter-wire ke `parser_untuk()`/endpoint
+  HTTP unggah (butuh dependency `python-multipart` yang belum terpasang).
 - [ ] Adaptor #2 — CSV/spreadsheet dengan pemetaan kolom bebas via LLM.
 - [ ] Adaptor #3 — export platform (majoo / BukuWarung / **WargaFinance**) — satu adaptor per format, **bukan** patokan arsitektur.
 - [ ] 🎲 **Adaptor QRIS / e-wallet — kandidat prioritas, KONDISIONAL.** Kalau AO bank di Tahap 0 mengonfirmasi bahwa riwayat QRIS mengubah kepercayaan mereka, adaptor ini **naik ke atas** (mungkin mendahului #2 dan #3) karena ia satu-satunya sumber yang membuat laporan *terverifikasi*, bukan self-report. Kalau premisnya gugur, ia turun jadi adaptor biasa. **Jangan jadwalkan sebelum Tahap 0 menjawab.**

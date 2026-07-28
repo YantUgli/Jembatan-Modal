@@ -5,6 +5,51 @@
 
 ---
 
+## 2026-07-28 — Asisten KUR (4c) slice pertama: `tanya_kur` aksi terstruktur, guard wired (C1+C2)
+
+- **Konteks:** D1 (di bawah) menaikkan entri bunga KUR ke `aktif`, jadi router
+  4c yang menjawabnya jadi bermakna untuk pertama kali. Belum ada satu jalur
+  pun (router, tool, endpoint) yang memanggil `jawab_bunga_kur` — guard aturan
+  #4 (`app/services/panduan_kur.py`) sudah teruji sendirian sejak 2026-07-27
+  tapi tidak terhubung ke pengguna sama sekali.
+
+- **Keputusan:** Dibangun sebagai **aksi terstruktur** `tanya_kur` di `/chat`
+  (`app/api/main.py`) — persis pola `tanya_skor` (2026-07-22/2026-07-27), BUKAN
+  label baru di `AksiRouter`. Klien mengirim `jenis_kur`/`sektor_usaha`/
+  `berorientasi_ekspor` sebagai slot eksplisit (mirip chip), bukan kalimat
+  bebas yang diekstrak LLM. Orkestrator dapat fungsi baru `kartu_panduan_kur`
+  yang memanggil `jawab_bunga_kur` (satu-satunya jalan ke isi) lalu memetakan
+  `Penolakan` → `KartuKlarifikasi` atau `JawabanTerkutip` → kartu baru
+  `KartuPanduanKur` (`app/kanal/kontrak.py`, `VERSI_KONTRAK` 9→10).
+
+- **Alasan:** Menambah label ketujuh ke `AksiRouter` mengulang risiko yang
+  sudah dua kali dicatat (2026-07-22 untuk router intent bahasa-bebas,
+  2026-07-27 untuk `tanya_skor`) — prompt "jungkat-jungkit" akurasi di ukuran
+  model ini belum diukur untuk domain KUR sama sekali, dan `04-rencana-kerja.md`
+  §4c sendiri menempatkan ekstraksi bahasa-bebas (wawancara multi-turn,
+  `kur_interviews`) sebagai pekerjaan **terpisah** dari slice ini — membangun
+  keduanya sekaligus akan mencampur dua keputusan yang belum siap diukur
+  sendiri-sendiri. Slot eksplisit juga menegakkan aturan A.4 rencana eksekusi
+  secara struktural: `berorientasi_ekspor` **tidak bisa** disimpulkan kode
+  karena field-nya memang harus diisi eksplisit oleh klien — tak ada kode yang
+  membaca kata "ekspor" dari kalimat dan menebak niat penggunanya.
+
+- **Konsekuensi:**
+  - `pytest tests/test_kanal_panduan_kur.py -q` (17 test) mengunci: guard
+    menolak draft (C1), tiap kombinasi jenis KUR × sektor menjawab tarif
+    Lampiran A dengan `pasal_rujukan` + `sumber_url` (C2), konteks kosong/
+    parsial selalu klarifikasi, disclaimer selalu ada.
+  - `VERSI_KONTRAK` naik ke 10 — tiga test lain yang mengunci angka versi
+    literal (`test_kanal_untung_keuangan.py`, `test_api_dokumen.py`,
+    `test_api_impor.py`) diperbarui mengikuti.
+  - Alur wawancara multi-turn (`kur_interviews`), `susun_dokumen_kur`, dan
+    `panduan_perizinan` (04-rencana-kerja.md §4c) **belum** digarap — slice ini
+    murni Q&A tarif dari `panduan_entries`, bukan penyusunan dokumen KUR.
+  - Topik `agunan` (Pasal 20/21) belum punya entri sama sekali; guard/handler
+    di sini hanya menjangkau topik `bunga`.
+
+---
+
 ## 2026-07-28 — Bunga KUR draft → aktif; `KategoriKur` pecah Mikro/Kecil (D1)
 
 - **Konteks:** Verifikasi A1 (teks Permenko 1/2026, `docs/regulasi/2026PemenkoEkon001.pdf`)

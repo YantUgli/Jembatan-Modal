@@ -33,6 +33,7 @@ from app.kanal import (
     kartu_impor_tinjau,
     kartu_keuangan,
     kartu_laporan,
+    kartu_panduan_kur,
     kartu_riwayat,
     kartu_skor,
     kartu_untung,
@@ -52,6 +53,7 @@ from app.services.auth import (
     resolusi_sesi,
 )
 from app.services.impor import TidakBisaDiterima
+from app.services.panduan_kur import KategoriKur, KonteksBunga, SektorUsaha
 from app.services.periode import Periode, periode_dari_label
 
 app = FastAPI(title="JembatanModal — API chat", version="0.1.0")
@@ -149,8 +151,8 @@ class KonteksMasuk(BaseModel):
 class PesanMasuk(BaseModel):
     teks: str | None = None
     # koreksi_kategori | tanya_untung | tanya_keuangan | tanya_skor |
-    # lihat_transaksi | buat_laporan | impor_tinjau | impor_putuskan |
-    # impor_terima_yakin | impor_konfirmasi
+    # tanya_kur | lihat_transaksi | buat_laporan | impor_tinjau |
+    # impor_putuskan | impor_terima_yakin | impor_konfirmasi
     aksi: str | None = None
     transaksi_id: int | None = None
     jenis: str | None = None  # nilai JenisTransaksi untuk koreksi_kategori
@@ -159,6 +161,12 @@ class PesanMasuk(BaseModel):
     import_id: int | None = None
     row_id: int | None = None
     terima: bool | None = None
+    # Slot terstruktur untuk tanya_kur (chip/form, bukan ekstraksi bahasa
+    # bebas). `berorientasi_ekspor` TIDAK PERNAH disimpulkan dari kalimat
+    # (Lampiran A.4 rencana eksekusi) — pengguna yang menyatakannya eksplisit.
+    jenis_kur: str | None = None  # nilai KategoriKur
+    sektor_usaha: str | None = None  # nilai SektorUsaha
+    berorientasi_ekspor: bool | None = None
     # Periode opsional (ISO) untuk tanya_untung/tanya_keuangan; default bulan
     # berjalan diselesaikan server-side.
     mulai: date | None = None
@@ -281,6 +289,25 @@ def chat(
             selesai=pesan.selesai or (p.selesai if p else None),
             label=p.label if p else "",
         ).ke_dict()
+
+    if pesan.aksi == "tanya_kur":
+        # Aksi terstruktur, sama alasan dengan tanya_skor di atas: tidak
+        # menambah label ke AksiRouter. `business` di sini hanya gerbang auth
+        # (Depends) — `panduan_entries` global, bukan data per-tenant.
+        try:
+            kategori = KategoriKur(pesan.jenis_kur) if pesan.jenis_kur else None
+        except ValueError:
+            raise HTTPException(422, f"jenis_kur tidak dikenal: {pesan.jenis_kur!r}") from None
+        try:
+            sektor = SektorUsaha(pesan.sektor_usaha) if pesan.sektor_usaha else None
+        except ValueError:
+            raise HTTPException(
+                422, f"sektor_usaha tidak dikenal: {pesan.sektor_usaha!r}"
+            ) from None
+        konteks = KonteksBunga(
+            kategori=kategori, sektor=sektor, berorientasi_ekspor=pesan.berorientasi_ekspor
+        )
+        return kartu_panduan_kur(session, konteks).ke_dict()
 
     if pesan.aksi == "lihat_transaksi":
         # Tanpa `periode` → daftar tak berfilter (perilaku default). Lihat

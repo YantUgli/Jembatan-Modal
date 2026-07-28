@@ -116,7 +116,13 @@ Target akhir tahap: **pengguna tahu untung bersih per produk yang jujur.**
 - [ ] **Catat hasil pengajuan** → `kur_outcomes` (lolos/ditolak/plafon cair). Yang dibangun sekarang **hanya pencatatannya**; kalibrasinya menunggu data cukup (H4). Tanpa mulai mencatat sekarang, flywheel tidak pernah punya bahan bakar — dan sampai ia berputar, ambang skor tetap kalibrasi awal yang tak boleh dihadapkan ke penyalur.
 
 ### 4c. Asisten KUR & panduan formal
-- [ ] Alur wawancara multi-turn (state di `kur_interviews`).
+- [x] Slice pertama (2026-07-28): jawaban bunga KUR lewat aksi terstruktur
+  `tanya_kur` (`kartu_panduan_kur` di orkestrator) — guard aturan #4
+  (`jawab_bunga_kur`) di jalur satu-satunya sebelum jawaban sampai pengguna,
+  konteks (jenis KUR/sektor/ekspor) dikirim sebagai slot eksplisit, bukan
+  diekstrak dari kalimat bebas. Lihat `docs/keputusan.md` 2026-07-28.
+- [ ] Alur wawancara multi-turn (state di `kur_interviews`) — dibutuhkan begitu
+  slot di atas ingin diisi lewat percakapan ngobrol, bukan chip/form.
 - [ ] `susun_dokumen_kur`: wawancara + laporan → proposal PDF + checklist (dari `panduan_entries`, bertanggal).
 - [ ] `panduan_perizinan` — baca dari `panduan_entries`; **memandu & menjelaskan saja**, tidak filing (brief §4 non-goals).
 - [ ] Disclaimer eksplisit di tiap dokumen: alat bantu persiapan, bukan jaminan persetujuan.

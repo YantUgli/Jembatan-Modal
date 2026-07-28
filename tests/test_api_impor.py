@@ -117,7 +117,7 @@ def test_tinjau_lalu_centang_lalu_simpan(session: Session, business: Business):
     impor = _draft(session, business)
 
     data = _chat(session, business, aksi="impor_tinjau", import_id=impor.id)
-    assert data["versi"] == 9
+    assert data["versi"] == 10
     assert data["kartu"][0]["tipe"] == "impor"
     assert data["kartu"][0]["jumlah"] == 2
 

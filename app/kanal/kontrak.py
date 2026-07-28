@@ -26,7 +26,7 @@ from dataclasses import asdict, dataclass, field
 
 from enum import Enum
 
-VERSI_KONTRAK = 9
+VERSI_KONTRAK = 10
 
 
 class TipeKartu(str, Enum):
@@ -42,6 +42,7 @@ class TipeKartu(str, Enum):
     impor = "impor"
     skor = "skor"
     belum_diketahui = "belum_diketahui"
+    panduan_kur = "panduan_kur"
 
 
 # ── Kartu ────────────────────────────────────────────────────────────────────
@@ -119,7 +120,7 @@ class BarisKonfirmasi:
 
 @dataclass
 class KartuKonfirmasi:
-    """"Tercatat ya, Bu" — hasil pencatatan, dirender dari template kode.
+    """ "Tercatat ya, Bu" — hasil pencatatan, dirender dari template kode.
 
     `konfirmasi` datang apa adanya dari tool (bukan panggilan LLM kedua), jadi
     angka di dalamnya mustahil meleset dari yang tersimpan.
@@ -545,6 +546,37 @@ class KartuBelumDiketahui:
             self.teks_alt = f"{self.judul} — {self.alasan}{ekor}"
 
 
+@dataclass
+class KartuPanduanKur:
+    """Jawaban panduan KUR (bunga/plafon) — Tahap 4c, satu entri `panduan_entries`
+    yang sudah lolos guard aturan #4 (`app/services/panduan_kur.jawab_bunga_kur`).
+
+    ⛔ Isi **selalu** berasal dari entri `aktif` bersumber — kartu ini tak pernah
+    dibuat dari jawaban yang ditolak guard (jalur itu memakai `KartuKlarifikasi`,
+    lihat `kartu_panduan_kur` di orkestrator). `pasal_rujukan`/`sumber_url`/
+    `versi_regulasi` wajib tampil (aturan #4/#7 kontrak guard) supaya pengguna
+    bisa memeriksa sendiri, bukan sekadar percaya. `catatan` membawa disclaimer
+    pendek (semangat aturan #5) — ini panduan, bukan jaminan pengajuan disetujui.
+    """
+
+    isi: str
+    sumber_url: str
+    pasal_rujukan: str | None = None
+    versi_regulasi: str | None = None
+    catatan: list[str] = field(default_factory=list)
+    teks_alt: str = ""
+    tipe: str = TipeKartu.panduan_kur.value
+
+    def __post_init__(self) -> None:
+        if not self.teks_alt:
+            rujukan = (
+                f"{self.pasal_rujukan}, {self.sumber_url}"
+                if self.pasal_rujukan
+                else self.sumber_url
+            )
+            self.teks_alt = f"{self.isi} ({rujukan})"
+
+
 Kartu = (
     KartuSapaan
     | KartuNarasi
@@ -558,6 +590,7 @@ Kartu = (
     | KartuImpor
     | KartuSkor
     | KartuBelumDiketahui
+    | KartuPanduanKur
 )
 
 
@@ -602,6 +635,7 @@ __all__ = [
     "BarisKomponen",
     "KartuSkor",
     "KartuBelumDiketahui",
+    "KartuPanduanKur",
     "Kartu",
     "PesanKeluar",
 ]

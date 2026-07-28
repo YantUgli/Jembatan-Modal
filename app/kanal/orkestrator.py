@@ -34,6 +34,7 @@ from app.kanal.kontrak import (
     KartuKeuangan,
     KartuKlarifikasi,
     KartuKonfirmasi,
+    KartuPanduanKur,
     KartuResep,
     KartuRiwayat,
     KartuSapaan,
@@ -68,6 +69,7 @@ from app.services.impor import (
     tinjau_impor,
 )
 from app.services.laba import hitung_laba_periode
+from app.services.panduan_kur import KonteksBunga, Penolakan, jawab_bunga_kur
 from app.services.periode import Periode, baca_periode, menyebut_masa_depan
 from app.services.resep import HasilAturResep
 from app.services.skor import hitung_skor
@@ -101,6 +103,7 @@ __all__ = [
     "kartu_impor_putuskan",
     "kartu_impor_terima_yakin",
     "kartu_impor_konfirmasi",
+    "kartu_panduan_kur",
 ]
 
 
@@ -253,7 +256,11 @@ def tangani_pesan(
         hasil_resep = atur_resep_dari_teks(session, adapter, business_id, teks, hari_ini)
         if isinstance(hasil_resep, Klarifikasi):
             return PesanKeluar(
-                [KartuKlarifikasi(pertanyaan=hasil_resep.pertanyaan, yang_kurang=hasil_resep.yang_kurang)]
+                [
+                    KartuKlarifikasi(
+                        pertanyaan=hasil_resep.pertanyaan, yang_kurang=hasil_resep.yang_kurang
+                    )
+                ]
             )
         return PesanKeluar([_kartu_resep(hasil_resep)])
     hasil = catat_transaksi(session, adapter, business_id, teks, hari_ini)
@@ -659,6 +666,45 @@ def kartu_skor(
     )
 
 
+_DISCLAIMER_KUR = (
+    "Ini panduan umum berdasarkan regulasi yang berlaku, bukan jaminan pengajuan "
+    "KUR disetujui. Keputusan akhir tetap di bank/lembaga penyalur."
+)
+
+
+def kartu_panduan_kur(session: Session, konteks: KonteksBunga) -> PesanKeluar:
+    """Bunga KUR — jawaban HANYA dari `panduan_entries` aktif (Tahap 4c, C1+C2).
+
+    Aksi terstruktur (chip/form: jenis KUR, sektor, status ekspor), bukan label
+    router bahasa-bebas — sama seperti `kartu_skor` (keputusan.md 2026-07-22/
+    2026-07-27): menambah label ke tujuh ke `AksiRouter` berisiko menggeser
+    akurasi enam label yang sudah ada. **Status ekspor tidak pernah disimpulkan
+    kode** (Lampiran A.4 rencana eksekusi) — ia datang sebagai input eksplisit
+    dari pengguna, bukan tebakan dari kata "ekspor" di kalimat.
+
+    ⛔ Aturan #1/#4: nol aritmatika/angka literal di sini. `jawab_bunga_kur`
+    adalah satu-satunya jalan ke isi — entri `draft`/`superseded`/sumber
+    tak-tepercaya sudah ditolak di lapisan guard sebelum sampai fungsi ini.
+    Konteks kosong/parsial selalu berujung `KartuKlarifikasi` yang meminta slot
+    yang kurang (I6), tak pernah tebakan atau `bunga-overview` sebagai jawaban
+    tarif final.
+    """
+    hasil = jawab_bunga_kur(session, konteks)
+    if isinstance(hasil, Penolakan):
+        return PesanKeluar([KartuKlarifikasi(pertanyaan=hasil.alasan)])
+    return PesanKeluar(
+        [
+            KartuPanduanKur(
+                isi=hasil.isi,
+                sumber_url=hasil.sumber_url,
+                pasal_rujukan=hasil.pasal_rujukan,
+                versi_regulasi=hasil.versi_regulasi,
+                catatan=[_DISCLAIMER_KUR],
+            )
+        ]
+    )
+
+
 def _delta_tampil(delta: int | None) -> str | None:
     """Progres sejak rapor terakhir. `None` = belum ada pembanding, jangan
     ditulis "tetap" — itu klaim pengukuran yang tak pernah dilakukan."""
@@ -688,9 +734,7 @@ def kartu_riwayat(
     if periode is None:
         rows = daftar_transaksi_terakhir(session, business_id, batas)
     else:
-        rows = daftar_transaksi_periode(
-            session, business_id, periode.mulai, periode.selesai, batas
-        )
+        rows = daftar_transaksi_periode(session, business_id, periode.mulai, periode.selesai, batas)
     baris = [_baris(t) for t in rows]
     tampil = _periode(periode.mulai, periode.selesai) if periode else ""
 
@@ -771,15 +815,11 @@ def kartu_impor_putuskan(
     return _bungkus_impor(putuskan_baris(session, business_id, import_id, row_id, terima))
 
 
-def kartu_impor_terima_yakin(
-    session: Session, business_id: int, import_id: int
-) -> PesanKeluar:
+def kartu_impor_terima_yakin(session: Session, business_id: int, import_id: int) -> PesanKeluar:
     return _bungkus_impor(terima_yakin(session, business_id, import_id))
 
 
-def kartu_impor_konfirmasi(
-    session: Session, business_id: int, import_id: int
-) -> PesanKeluar:
+def kartu_impor_konfirmasi(session: Session, business_id: int, import_id: int) -> PesanKeluar:
     """Simpan baris bercentang ke buku — satu-satunya pintu draft → transaksi."""
     return _bungkus_impor(konfirmasi_impor(session, business_id, import_id))
 

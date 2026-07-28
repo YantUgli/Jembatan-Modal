@@ -5,6 +5,75 @@
 
 ---
 
+## 2026-07-28 — Topik agunan KUR: entri kedua yang seed langsung aktif — pengecualian, bukan preseden (E2)
+
+- **Konteks:** `docs/plan-lanjutan.md` §E2 minta topik `agunan` ditambah ke asisten
+  KUR, memakai data yang sudah terverifikasi manusia (Lampiran A.3
+  `docs/PLAN_EKSEKUSI_CLAUDE_CODE.md`, dicocokkan ke
+  `docs/regulasi/2026PemenkoEkon001.pdf`): larangan agunan tambahan untuk plafon
+  ≤Rp100 juta (Pasal 20 (1)), pengecualian petani tebu/KUR khusus pertanian
+  (Pasal 20 (2)), dan sanksi subsidi tak dibayar/dikembalikan bila dilanggar
+  (Pasal 21 (1)/(2)). Ini entri KUR **kedua** (setelah bunga, D1 2026-07-28) yang
+  masuk `panduan_entries` — dan kedua-duanya melewati gerbang `draft` langsung ke
+  `aktif`, yang bisa salah dibaca sebagai "begini caranya menambah topik KUR".
+
+- **Keputusan:**
+  1. `app/seeds/panduan_kur_agunan.py` (baru) — satu entri overview
+     (`pertanyaan_kanonik="Apakah KUR butuh agunan tambahan?"`), `status=aktif`
+     langsung, `pasal_rujukan="Pasal 20 (1); Pasal 20 (2); Pasal 21 (1); Pasal 21 (2)"`,
+     `sumber_url` sama dengan bunga (regulasi payung sama, Permenko 1/2026). Upsert
+     per `pertanyaan_kanonik`, pola identik `panduan_kur_bunga.seed()`.
+  2. `kartu_panduan_kur` (`app/kanal/orkestrator.py`) diperluas menerima
+     `topik: str = "bunga"` (keyword-only, kompatibel mundur — pemanggil lama yang
+     hanya mengoper `konteks` tak berubah perilakunya). Topik `agunan` tidak
+     bercabang kategori/sektor/ekspor sama sekali — langsung `jawab_panduan(session,
+     "agunan")` generik, `konteks` diabaikan.
+  3. `PesanMasuk` (`app/api/main.py`) dapat slot baru `topik_kur: str | None = None`
+     (default `"bunga"`). Nilai di luar `_TOPIK_KUR_DIKENAL = {"bunga", "agunan"}` →
+     422 — pola yang sama dengan `jenis_kur`/`sektor_usaha`, tak pernah jatuh diam-diam
+     ke topik default. **Ini slot eksplisit baru, bukan label `AksiRouter` baru** —
+     konsisten dengan keputusan 2026-07-22/2026-07-27/2026-07-28 (tanya_kur).
+  4. ⚠️ **Sengaja plafon-agnostik.** Entri ini menjawab aturan agunan secara umum,
+     bukan pertanyaan bernominal ("saya mau pinjam 200 juta, butuh agunan tidak?").
+     Menjawabnya butuh guard membaca nominal plafon dari input pengguna dan
+     membandingkannya ke ambang Rp100 juta — **belum dibangun**. Follow-up bernama:
+     **F2 — jawaban agunan plafon-kondisional**, ditahan sampai ada slot eksplisit
+     nominal plafon (bukan diekstrak dari kalimat bebas, mengikuti pola yang sama
+     dengan `berorientasi_ekspor`) dan keputusan bagaimana ambang dibandingkan tanpa
+     LLM melakukan aritmatika (aturan #1).
+  5. **`status=aktif` langsung untuk topik `agunan` adalah pengecualian spesifik ke
+     data ini, BUKAN preseden umum.** Topik KUR berikutnya (mis. plafon per jenis
+     KUR, syarat calon penerima, restrukturisasi) **tetap default lewat gerbang
+     `draft` → verifikasi manusia → `aktif`** (pola 2026-07-27: `StatusPanduan.draft`
+     + checklist verifikasi), **kecuali** datanya sudah diverifikasi manusia dengan
+     cara yang sama persis seperti bunga & agunan di sini (dicocokkan ke Lampiran A
+     rencana eksekusi **dan** teks resmi PDF). Gerbang draft→aktif itu
+     load-bearing (aturan #4) — tidak boleh tergerus jadi kebiasaan "seed langsung
+     aktif karena yang sebelumnya begitu".
+
+- **Alasan:** butir 1-3 mengikuti pola guard generik yang sudah ada
+  (`jawab_panduan`) dan pola slot eksplisit `tanya_kur` yang sudah divalidasi
+  (2026-07-28 C1+C2) — agunan tidak butuh dataclass konteks baru karena aturannya
+  tidak bercabang kategori/sektor, hanya bercabang plafon (butir 4 justru
+  menandai cabang itu sebagai belum digarap, bukan diam-diam diabaikan). Butir 5
+  eksplisit karena tanpa penanda ini, sesi berikutnya bisa membaca "bunga & agunan
+  langsung aktif" sebagai kebiasaan yang sah, padahal keduanya aktif **karena**
+  sudah lolos verifikasi manusia ganda (Lampiran A + PDF resmi) — bukan karena
+  jalur cepatnya nyaman. Melonggarkan gerbang draft→aktif secara diam-diam persis
+  jenis erosi yang aturan #4 dirancang mencegah.
+
+- **Konsekuensi:**
+  - `pytest tests/test_seed_panduan_kur_agunan.py tests/test_kanal_panduan_kur.py
+    tests/test_panduan_kur.py -q` hijau — termasuk regresi eksplisit bahwa
+    `tanya_kur` tanpa `topik_kur` tetap berperilaku seperti sebelum E2 (default
+    bunga).
+  - `KartuPanduanKur`/`VERSI_KONTRAK` tidak berubah — kartu agunan memakai bentuk
+    kartu yang sama dengan bunga, tak ada field baru.
+  - F2 (agunan plafon-kondisional) dicatat sebagai item terbuka di
+    `docs/plan-lanjutan.md` bagian "Ditahan", bukan tenggelam sebagai catatan kaki.
+
+---
+
 ## 2026-07-28 — Impor CSV generik berhenti di struktur, bukan sampai transaksi (B3)
 
 - **Konteks:** P2 impor (~35%) hanya punya adaptor teks tempelan. Rencana

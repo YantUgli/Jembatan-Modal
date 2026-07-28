@@ -69,7 +69,7 @@ from app.services.impor import (
     tinjau_impor,
 )
 from app.services.laba import hitung_laba_periode
-from app.services.panduan_kur import KonteksBunga, Penolakan, jawab_bunga_kur
+from app.services.panduan_kur import KonteksBunga, Penolakan, jawab_bunga_kur, jawab_panduan
 from app.services.periode import Periode, baca_periode, menyebut_masa_depan
 from app.services.resep import HasilAturResep
 from app.services.skor import hitung_skor
@@ -672,24 +672,37 @@ _DISCLAIMER_KUR = (
 )
 
 
-def kartu_panduan_kur(session: Session, konteks: KonteksBunga) -> PesanKeluar:
-    """Bunga KUR — jawaban HANYA dari `panduan_entries` aktif (Tahap 4c, C1+C2).
+def kartu_panduan_kur(
+    session: Session, konteks: KonteksBunga | None = None, *, topik: str = "bunga"
+) -> PesanKeluar:
+    """Panduan KUR — jawaban HANYA dari `panduan_entries` aktif (Tahap 4c, C1+C2).
 
-    Aksi terstruktur (chip/form: jenis KUR, sektor, status ekspor), bukan label
+    Aksi terstruktur (chip/form: `topik_kur` + slot per topik), bukan label
     router bahasa-bebas — sama seperti `kartu_skor` (keputusan.md 2026-07-22/
     2026-07-27): menambah label ke tujuh ke `AksiRouter` berisiko menggeser
     akurasi enam label yang sudah ada. **Status ekspor tidak pernah disimpulkan
     kode** (Lampiran A.4 rencana eksekusi) — ia datang sebagai input eksplisit
     dari pengguna, bukan tebakan dari kata "ekspor" di kalimat.
 
-    ⛔ Aturan #1/#4: nol aritmatika/angka literal di sini. `jawab_bunga_kur`
-    adalah satu-satunya jalan ke isi — entri `draft`/`superseded`/sumber
-    tak-tepercaya sudah ditolak di lapisan guard sebelum sampai fungsi ini.
-    Konteks kosong/parsial selalu berujung `KartuKlarifikasi` yang meminta slot
-    yang kurang (I6), tak pernah tebakan atau `bunga-overview` sebagai jawaban
-    tarif final.
+    `topik="bunga"` (default) bercabang kategori × sektor × ekspor lewat
+    `konteks` (`KonteksBunga`). Topik lain (mis. `"agunan"`, keputusan.md
+    2026-07-28 E2) tidak bercabang sama sekali — cukup `jawab_panduan`
+    generik, `konteks` diabaikan. ⚠️ Agunan di sini **plafon-agnostik**: belum
+    menjawab pertanyaan bernominal ("pinjam 200jt, butuh agunan?") — lihat
+    docstring `app/seeds/panduan_kur_agunan.py` untuk follow-up bernama.
+
+    ⛔ Aturan #1/#4: nol aritmatika/angka literal di sini. `jawab_bunga_kur`/
+    `jawab_panduan` adalah satu-satunya jalan ke isi — entri `draft`/
+    `superseded`/sumber tak-tepercaya sudah ditolak di lapisan guard sebelum
+    sampai fungsi ini. Konteks kosong/parsial (topik bunga) selalu berujung
+    `KartuKlarifikasi` yang meminta slot yang kurang (I6), tak pernah tebakan
+    atau `bunga-overview` sebagai jawaban tarif final.
     """
-    hasil = jawab_bunga_kur(session, konteks)
+    hasil = (
+        jawab_bunga_kur(session, konteks or KonteksBunga())
+        if topik == "bunga"
+        else jawab_panduan(session, topik)
+    )
     if isinstance(hasil, Penolakan):
         return PesanKeluar([KartuKlarifikasi(pertanyaan=hasil.alasan)])
     return PesanKeluar(

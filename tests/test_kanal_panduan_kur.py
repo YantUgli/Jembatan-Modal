@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.kanal.kontrak import KartuKlarifikasi, KartuPanduanKur
 from app.kanal.orkestrator import kartu_panduan_kur
 from app.models import Business, PanduanEntry, StatusPanduan, TingkatSumber
+from app.seeds.panduan_kur_agunan import seed as seed_agunan
 from app.seeds.panduan_kur_bunga import seed as seed_bunga
 from app.services.panduan_kur import KategoriKur, KonteksBunga, SektorUsaha
 
@@ -163,6 +164,39 @@ def test_kartu_panduan_kur_disclaimer_selalu_ada(session: Session):
     assert any("bukan jaminan" in c for c in kartu.catatan)
 
 
+# ── Topik agunan (E2, 2026-07-28) — generik, tanpa cabang kategori/sektor ───
+
+
+def test_kartu_panduan_kur_agunan_menjawab_entri_aktif(session: Session):
+    seed_agunan(session)
+
+    hasil = kartu_panduan_kur(session, topik="agunan")
+
+    kartu = hasil.kartu[0]
+    assert isinstance(kartu, KartuPanduanKur)
+    assert "Rp100 juta" in kartu.isi
+    assert kartu.pasal_rujukan and "Pasal 20" in kartu.pasal_rujukan
+    assert kartu.sumber_url
+
+
+def test_kartu_panduan_kur_agunan_belum_di_seed_ditolak_bukan_kosong(session: Session):
+    """Belum ada entri agunan tersimpan → Penolakan/klarifikasi, bukan kartu
+    jawaban kosong atau exception."""
+    hasil = kartu_panduan_kur(session, topik="agunan")
+
+    assert isinstance(hasil.kartu[0], KartuKlarifikasi)
+
+
+def test_kartu_panduan_kur_agunan_disclaimer_selalu_ada(session: Session):
+    seed_agunan(session)
+
+    hasil = kartu_panduan_kur(session, topik="agunan")
+
+    kartu = hasil.kartu[0]
+    assert isinstance(kartu, KartuPanduanKur)
+    assert any("bukan jaminan" in c for c in kartu.catatan)
+
+
 # ── Lapisan HTTP (aksi terstruktur, bukan label router) ─────────────────────
 
 
@@ -226,3 +260,55 @@ def test_aksi_tanya_kur_tanpa_konteks_minta_klarifikasi(session: Session, busine
     )
 
     assert data["kartu"][0]["tipe"] == "klarifikasi"
+
+
+def test_aksi_tanya_kur_topik_agunan_mengembalikan_kartu(session: Session, business: Business):
+    pytest.importorskip("fastapi", reason="lapisan API opsional (extras `api`)")
+    from app.api import main as api
+
+    seed_agunan(session)
+
+    data = api.chat(
+        api.PesanMasuk(aksi="tanya_kur", topik_kur="agunan"),
+        session=session,
+        business=business,
+        adapter=None,
+    )
+
+    assert data["kartu"][0]["tipe"] == "panduan_kur"
+    assert "Rp100 juta" in data["kartu"][0]["isi"]
+
+
+def test_aksi_tanya_kur_topik_asing_ditolak(session: Session, business: Business):
+    pytest.importorskip("fastapi", reason="lapisan API opsional (extras `api`)")
+    from fastapi import HTTPException
+
+    from app.api import main as api
+
+    with pytest.raises(HTTPException) as e:
+        api.chat(
+            api.PesanMasuk(aksi="tanya_kur", topik_kur="plafon"),
+            session=session,
+            business=business,
+            adapter=None,
+        )
+    assert e.value.status_code == 422
+
+
+def test_aksi_tanya_kur_default_topik_tetap_bunga(session: Session, business: Business):
+    """Regresi: klien lama yang tak pernah mengirim `topik_kur` tetap dapat
+    perilaku bunga seperti sebelum E2."""
+    pytest.importorskip("fastapi", reason="lapisan API opsional (extras `api`)")
+    from app.api import main as api
+
+    seed_bunga(session)
+
+    data = api.chat(
+        api.PesanMasuk(aksi="tanya_kur", jenis_kur="super_mikro"),
+        session=session,
+        business=business,
+        adapter=None,
+    )
+
+    assert data["kartu"][0]["tipe"] == "panduan_kur"
+    assert "3%" in data["kartu"][0]["isi"]

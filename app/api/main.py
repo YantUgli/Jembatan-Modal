@@ -58,6 +58,10 @@ from app.services.periode import Periode, periode_dari_label
 
 app = FastAPI(title="JembatanModal — API chat", version="0.1.0")
 
+# Daftar tertutup topik `tanya_kur` (keputusan.md 2026-07-28 E2) — topik asing
+# → 422, tak pernah jatuh diam-diam ke "bunga" default.
+_TOPIK_KUR_DIKENAL = {"bunga", "agunan"}
+
 # BFF Next.js memanggil server-ke-server (tak butuh CORS), tapi selama dev UI
 # kadang menembak langsung. Origin diambil dari env; default = dev lokal.
 _origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
@@ -164,6 +168,11 @@ class PesanMasuk(BaseModel):
     # Slot terstruktur untuk tanya_kur (chip/form, bukan ekstraksi bahasa
     # bebas). `berorientasi_ekspor` TIDAK PERNAH disimpulkan dari kalimat
     # (Lampiran A.4 rencana eksekusi) — pengguna yang menyatakannya eksplisit.
+    # `topik_kur`: default "bunga" (kompatibel mundur); nilai lain dicek
+    # terhadap daftar tertutup (keputusan.md 2026-07-28 E2), 422 bila asing —
+    # sama seperti `jenis_kur`/`sektor_usaha`, tak pernah jatuh diam-diam ke
+    # topik default saat klien salah kirim.
+    topik_kur: str | None = None
     jenis_kur: str | None = None  # nilai KategoriKur
     sektor_usaha: str | None = None  # nilai SektorUsaha
     berorientasi_ekspor: bool | None = None
@@ -294,6 +303,9 @@ def chat(
         # Aksi terstruktur, sama alasan dengan tanya_skor di atas: tidak
         # menambah label ke AksiRouter. `business` di sini hanya gerbang auth
         # (Depends) — `panduan_entries` global, bukan data per-tenant.
+        topik = pesan.topik_kur or "bunga"
+        if topik not in _TOPIK_KUR_DIKENAL:
+            raise HTTPException(422, f"topik_kur tidak dikenal: {topik!r}")
         try:
             kategori = KategoriKur(pesan.jenis_kur) if pesan.jenis_kur else None
         except ValueError:
@@ -307,7 +319,7 @@ def chat(
         konteks = KonteksBunga(
             kategori=kategori, sektor=sektor, berorientasi_ekspor=pesan.berorientasi_ekspor
         )
-        return kartu_panduan_kur(session, konteks).ke_dict()
+        return kartu_panduan_kur(session, konteks, topik=topik).ke_dict()
 
     if pesan.aksi == "lihat_transaksi":
         # Tanpa `periode` → daftar tak berfilter (perilaku default). Lihat

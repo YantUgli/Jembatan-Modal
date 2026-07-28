@@ -1,18 +1,23 @@
-"""Seed draft `panduan_entries` — bunga KUR per sektor (Permenko 1/2026).
+"""Seed `panduan_entries` — bunga/marjin KUR per jenis KUR × sektor (Permenko 1/2026).
 
-BELUM TERVERIFIKASI ke pasal resmi. Empat entri di sini masuk sebagai
-`status=draft` (aturan #4: guard nanti wajib menolak entri draft persis
-seperti `tingkat_sumber=lainnya`) — hasil riset sekunder + satu halaman resmi
-Kemenko Perekonomian, bukan bacaan pasal-per-pasal. Lihat
-`docs/checklist-verifikasi-bunga-kur.md` untuk syarat promosi ke `aktif`.
+**Terverifikasi (A1, 2026-07-28)**: diambil langsung dari teks resmi
+`docs/regulasi/2026PemenkoEkon001.pdf`, dicocokkan ke Lampiran A rencana
+eksekusi. Delapan entri di sini masuk sebagai `status=aktif` — lihat
+`docs/checklist-verifikasi-bunga-kur.md` untuk riwayat verifikasi.
 
-Kenapa 4 entri, bukan 1: bunga KUR bercabang menurut kategori × sektor ×
-orientasi ekspor × urutan akad — satu entri "flat 6%" generik pernah nyaris
-ter-seed dan salah (klaim tanpa-batas-frekuensi ikut kebawa ke segmen yang
-tidak berhak). Router (saat 4c dibangun) sebaiknya menanyakan sektor/ekspor
-dulu, baru mengutip entri spesifik — bukan langsung mengutip overview.
+Kenapa 8 entri, bukan 4: bunga KUR bercabang menurut jenis KUR × sektor ×
+orientasi ekspor × urutan akad — dan **Mikro dan Kecil dipecah terpisah**
+(koreksi load-bearing): jenjang perdagangan non-ekspor Mikro (6%→7%, maks 2
+akad, Pasal 36 (3) b + Pasal 37 (1) b) BEDA dari Kecil (6%→7%→8%→9%,
+akumulasi maks Rp500jt, Pasal 43 (3) b + Pasal 44 (1) b) — menyeragamkan
+keduanya adalah kesalahan yang guard (`app/services/panduan_kur.py`) dirancang
+untuk menangkap. Khusus dan Penempatan PMI ditambahkan sebagai kategori flat
+tersendiri (Pasal 51 (1), Pasal 58 (1)).
 
-Idempoten: kalau entri versi_regulasi ini sudah ada, tidak menyeed ulang.
+Idempoten lewat upsert: entri dicocokkan per (`topik`, `pertanyaan_kanonik`,
+`versi_regulasi`) — bila sudah ada, kontennya **ditimpa** dengan versi
+terverifikasi ini (bukan cuma dilewati), supaya database yang sudah kadung
+menyimpan draft riset-sekunder lama ikut ter-upgrade saat seed dijalankan ulang.
 """
 
 from __future__ import annotations
@@ -27,9 +32,9 @@ from app.models import PanduanEntry, StatusPanduan, TingkatSumber
 VERSI = "Permenko 1/2026"
 TANGGAL_BERLAKU = date(2026, 1, 13)
 TANGGAL_TINJAU = date(2027, 1, 1)
-TANGGAL_AKSES = date(2026, 7, 27)
-SUMBER_URL_PLACEHOLDER = (
-    "https://peraturan.bpk.go.id/... (Permenko 1/2026 — isi URL final setelah verifikasi)"
+TANGGAL_AKSES = date(2026, 7, 28)
+SUMBER_URL = (
+    "https://peraturan.bpk.go.id/Details/342969/permenko-perekonomian-no-1-tahun-2026"
 )
 
 # Kunci pencocokan dipakai `app/services/panduan_kur.py` (guard aturan #4) untuk
@@ -37,94 +42,145 @@ SUMBER_URL_PLACEHOLDER = (
 # kebenaran teksnya adalah seed ini, bukan disalin ulang di guard.
 PERTANYAAN_OVERVIEW = "Berapa bunga KUR saya sekarang?"
 PERTANYAAN_SUPER_MIKRO = "Berapa bunga KUR Super Mikro?"
-PERTANYAAN_PRODUKSI_EKSPOR = "Berapa bunga KUR untuk usaha produksi atau perdagangan ekspor?"
-PERTANYAAN_PERDAGANGAN_NONEKSPOR = "Berapa bunga KUR untuk usaha perdagangan yang bukan ekspor?"
+PERTANYAAN_MIKRO_PRODUKSI_EKSPOR = (
+    "Berapa bunga KUR Mikro untuk usaha produksi atau perdagangan ekspor?"
+)
+PERTANYAAN_MIKRO_NONEKSPOR = "Berapa bunga KUR Mikro untuk usaha perdagangan yang bukan ekspor?"
+PERTANYAAN_KECIL_PRODUKSI_EKSPOR = (
+    "Berapa bunga KUR Kecil untuk usaha produksi atau perdagangan ekspor?"
+)
+PERTANYAAN_KECIL_NONEKSPOR = "Berapa bunga KUR Kecil untuk usaha perdagangan yang bukan ekspor?"
+PERTANYAAN_KHUSUS = "Berapa bunga KUR Khusus?"
+PERTANYAAN_PMI = "Berapa bunga KUR Penempatan PMI?"
 
 _ENTRI = [
     dict(
         pertanyaan_kanonik=PERTANYAAN_OVERVIEW,
         isi=(
-            "Bunga KUR bergantung pada kategori dan sektor usaha. Super Mikro "
-            "(plafon sampai Rp10 juta): 3% efektif per tahun. KUR Mikro/Kecil "
-            "untuk sektor produksi atau perdagangan berorientasi ekspor: 6% "
-            "efektif per tahun secara tetap. KUR Mikro/Kecil untuk perdagangan "
-            "yang tidak berorientasi ekspor: berjenjang menurut urutan akad "
-            "(6%, 7%, 8%, 9%). Untuk menjawab tepat, perlu diketahui: jenis "
-            "usaha (produksi atau perdagangan), berorientasi ekspor atau "
-            "tidak, besar plafon, dan ini pengajuan ke berapa."
+            "Bunga/marjin KUR berbeda menurut jenis KUR dan sektor usaha. Super "
+            "Mikro (plafon sampai Rp10 juta): 3% efektif per tahun, sektor apa "
+            "pun. KUR Mikro (plafon >Rp10 juta s.d. Rp100 juta): 6% untuk sektor "
+            "produksi atau perdagangan berorientasi ekspor (tanpa batas frekuensi "
+            "maupun akumulasi akad), atau berjenjang 6%→7% untuk perdagangan "
+            "non-ekspor (maksimal 2 akad). KUR Kecil (plafon >Rp100 juta s.d. "
+            "Rp500 juta): 6% untuk produksi/ekspor (tanpa batas), atau berjenjang "
+            "6%→7%→8%→9% untuk perdagangan non-ekspor (akumulasi maksimal "
+            "Rp500 juta, termasuk akumulasi dari KUR Mikro sebelumnya). KUR "
+            "Khusus dan KUR Penempatan PMI: 6% flat. Untuk menjawab tepat, perlu "
+            "diketahui: jenis KUR (super mikro/mikro/kecil/khusus/PMI), sektor "
+            "usaha (produksi atau perdagangan), status ekspor (dibuktikan "
+            "dokumen dari kementerian/instansi terkait), dan ini pengajuan akad "
+            "ke berapa."
         ),
         pasal_rujukan=None,
     ),
     dict(
-        pertanyaan_kanonik="Berapa bunga KUR Super Mikro?",
+        pertanyaan_kanonik=PERTANYAAN_SUPER_MIKRO,
         isi=(
             "KUR Super Mikro (plafon sampai Rp10 juta) dikenakan bunga 3% "
-            "efektif per tahun. 'Efektif' berarti bunga dihitung dari sisa "
-            "pokok pinjaman, sehingga bebannya menurun seiring cicilan "
-            "berjalan."
+            "efektif per tahun, tanpa membedakan sektor usaha, tanpa batas "
+            "frekuensi maupun akumulasi akad."
         ),
-        pasal_rujukan="(pasal tarif Super Mikro — KONFIRMASI ke teks resmi)",
+        pasal_rujukan="Pasal 30; Pasal 29 (3)",
     ),
     dict(
-        pertanyaan_kanonik="Berapa bunga KUR untuk usaha produksi atau perdagangan ekspor?",
+        pertanyaan_kanonik=PERTANYAAN_MIKRO_PRODUKSI_EKSPOR,
         isi=(
-            "Untuk KUR Mikro dan KUR Kecil di sektor produksi (misalnya "
-            "pertanian, perikanan, industri pengolahan, jasa) serta "
-            "perdagangan yang berorientasi ekspor, bunga ditetapkan 6% "
-            "efektif per tahun secara tetap, berapa pun urutan atau jumlah "
-            "pengajuan. Segmen ini juga tidak dibatasi frekuensi maupun "
-            "akumulasi penarikan KUR, selama kapasitas pembayaran dan "
-            "kualitas kredit (SLIK OJK) tetap terjaga."
+            "KUR Mikro (plafon >Rp10 juta s.d. Rp100 juta) untuk sektor "
+            "produksi, atau perdagangan yang berorientasi ekspor (dibuktikan "
+            "dokumen proses ekspor dari kementerian/instansi terkait), "
+            "dikenakan bunga 6% efektif per tahun secara tetap — tanpa batas "
+            "frekuensi maupun akumulasi akad."
         ),
-        pasal_rujukan=(
-            "(kandidat: Pasal 37 KUR Mikro, Pasal 44 KUR Kecil — nomor "
-            "BERBEDA antar sumber, KONFIRMASI ke teks resmi)"
-        ),
+        pasal_rujukan="Pasal 37 (1) a; Pasal 36 (3) a",
     ),
     dict(
-        pertanyaan_kanonik="Berapa bunga KUR untuk usaha perdagangan yang bukan ekspor?",
+        pertanyaan_kanonik=PERTANYAAN_MIKRO_NONEKSPOR,
         isi=(
-            "Untuk KUR Mikro dan KUR Kecil di sektor perdagangan yang TIDAK "
-            "berorientasi ekspor, berlaku skema bunga berjenjang mengikuti "
-            "urutan akad: akad pertama 6%, akad kedua 7%, akad ketiga 8%, "
-            "dan akad keempat 9% efektif per tahun. Tarif 9% pada akad "
-            "keempat berlaku khusus untuk KUR Kecil. Untuk segmen ini, "
-            "skema berjenjang tidak dihapus."
+            "KUR Mikro (plafon >Rp10 juta s.d. Rp100 juta) untuk sektor "
+            "perdagangan yang TIDAK berorientasi ekspor dikenakan bunga "
+            "berjenjang menurut urutan akad: akad pertama 6%, akad kedua 7% "
+            "efektif per tahun — dibatasi maksimal 2 akad."
         ),
-        pasal_rujukan="(pasal skema berjenjang perdagangan non-ekspor — KONFIRMASI ke teks resmi)",
+        pasal_rujukan="Pasal 37 (1) b; Pasal 36 (3) b",
+    ),
+    dict(
+        pertanyaan_kanonik=PERTANYAAN_KECIL_PRODUKSI_EKSPOR,
+        isi=(
+            "KUR Kecil (plafon >Rp100 juta s.d. Rp500 juta) untuk sektor "
+            "produksi, atau perdagangan yang berorientasi ekspor (dibuktikan "
+            "dokumen proses ekspor dari kementerian/instansi terkait), "
+            "dikenakan bunga 6% efektif per tahun secara tetap — tanpa batas "
+            "frekuensi maupun akumulasi akad."
+        ),
+        pasal_rujukan="Pasal 44 (1) a; Pasal 43 (3) a",
+    ),
+    dict(
+        pertanyaan_kanonik=PERTANYAAN_KECIL_NONEKSPOR,
+        isi=(
+            "KUR Kecil (plafon >Rp100 juta s.d. Rp500 juta) untuk sektor "
+            "perdagangan yang TIDAK berorientasi ekspor dikenakan bunga "
+            "berjenjang menurut urutan akad: akad pertama 6%, kedua 7%, "
+            "ketiga 8%, keempat 9% efektif per tahun — akumulasi plafon "
+            "dibatasi maksimal Rp500 juta, termasuk akumulasi dari KUR Mikro "
+            "sebelumnya."
+        ),
+        pasal_rujukan="Pasal 44 (1) b; Pasal 43 (3) b",
+    ),
+    dict(
+        pertanyaan_kanonik=PERTANYAAN_KHUSUS,
+        isi=(
+            "KUR Khusus (plafon sampai Rp500 juta) dikenakan bunga 6% "
+            "efektif per tahun secara flat."
+        ),
+        pasal_rujukan="Pasal 51 (1); Pasal 50 (1)",
+    ),
+    dict(
+        pertanyaan_kanonik=PERTANYAAN_PMI,
+        isi=(
+            "KUR Penempatan Pekerja Migran Indonesia (plafon sampai Rp100 "
+            "juta) dikenakan bunga 6% efektif per tahun secara flat."
+        ),
+        pasal_rujukan="Pasal 58 (1); Pasal 57 (1)",
     ),
 ]
 
 
 def seed(session: Session) -> list[PanduanEntry]:
-    """Isi draft panduan bunga KUR. Kembalikan entri (baru atau yang sudah ada)."""
-    existing = session.scalars(
-        select(PanduanEntry).where(
-            PanduanEntry.topik == "bunga", PanduanEntry.versi_regulasi == VERSI
-        )
-    ).all()
-    if existing:
-        return list(existing)
+    """Isi/perbarui entri panduan bunga KUR. Kembalikan entri (baru atau ter-upgrade).
 
-    entri = [
-        PanduanEntry(
-            topik="bunga",
-            pertanyaan_kanonik=e["pertanyaan_kanonik"],
-            isi=e["isi"],
-            sumber_url=SUMBER_URL_PLACEHOLDER,
-            tingkat_sumber=TingkatSumber.resmi_regulasi,
-            versi_regulasi=VERSI,
-            pasal_rujukan=e["pasal_rujukan"],
-            tanggal_akses=TANGGAL_AKSES,
-            tanggal_berlaku=TANGGAL_BERLAKU,
-            tanggal_tinjau=TANGGAL_TINJAU,
-            status=StatusPanduan.draft,
-        )
-        for e in _ENTRI
-    ]
-    session.add_all(entri)
+    Upsert per `pertanyaan_kanonik` (bukan cuma "sudah ada versi ini? lewati"):
+    database yang sudah kadung menyimpan draft riset-sekunder lama ikut
+    ter-timpa dengan isi terverifikasi begitu seed ini dijalankan ulang.
+    """
+    existing = {
+        e.pertanyaan_kanonik: e
+        for e in session.scalars(
+            select(PanduanEntry).where(
+                PanduanEntry.topik == "bunga", PanduanEntry.versi_regulasi == VERSI
+            )
+        ).all()
+    }
+
+    hasil: list[PanduanEntry] = []
+    for e in _ENTRI:
+        entri = existing.get(e["pertanyaan_kanonik"])
+        if entri is None:
+            entri = PanduanEntry(topik="bunga", versi_regulasi=VERSI)
+            session.add(entri)
+        entri.pertanyaan_kanonik = e["pertanyaan_kanonik"]
+        entri.isi = e["isi"]
+        entri.sumber_url = SUMBER_URL
+        entri.tingkat_sumber = TingkatSumber.resmi_regulasi
+        entri.pasal_rujukan = e["pasal_rujukan"]
+        entri.tanggal_akses = TANGGAL_AKSES
+        entri.tanggal_berlaku = TANGGAL_BERLAKU
+        entri.tanggal_tinjau = TANGGAL_TINJAU
+        entri.status = StatusPanduan.aktif
+        hasil.append(entri)
+
     session.flush()
-    return entri
+    return hasil
 
 
 def main() -> None:
@@ -132,7 +188,7 @@ def main() -> None:
 
     with session_scope() as session:
         entri = seed(session)
-        print(f"Seed selesai: {len(entri)} entri panduan bunga KUR (status=draft).")
+        print(f"Seed selesai: {len(entri)} entri panduan bunga KUR (status=aktif).")
 
 
 if __name__ == "__main__":

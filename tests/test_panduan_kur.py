@@ -14,8 +14,11 @@ from sqlalchemy.orm import Session
 
 from app.models import PanduanEntry, StatusPanduan, TingkatSumber
 from app.seeds.panduan_kur_bunga import (
-    PERTANYAAN_PERDAGANGAN_NONEKSPOR,
-    PERTANYAAN_PRODUKSI_EKSPOR,
+    PERTANYAAN_KECIL_NONEKSPOR,
+    PERTANYAAN_KHUSUS,
+    PERTANYAAN_MIKRO_NONEKSPOR,
+    PERTANYAAN_MIKRO_PRODUKSI_EKSPOR,
+    PERTANYAAN_PMI,
     PERTANYAAN_SUPER_MIKRO,
     seed as seed_bunga,
 )
@@ -137,11 +140,11 @@ def test_guard_bunga_perdagangan_nonekspor(session: Session):
     _entri(
         session,
         topik="bunga",
-        pertanyaan_kanonik=PERTANYAAN_PERDAGANGAN_NONEKSPOR,
+        pertanyaan_kanonik=PERTANYAAN_KECIL_NONEKSPOR,
         isi="Berjenjang: akad pertama 6%, kedua 7%, ketiga 8%, keempat 9%.",
     )
     konteks = KonteksBunga(
-        kategori=KategoriKur.mikro_kecil,
+        kategori=KategoriKur.kecil,
         sektor=SektorUsaha.perdagangan,
         berorientasi_ekspor=False,
     )
@@ -158,16 +161,63 @@ def test_guard_bunga_produksi_ekspor(session: Session):
     _entri(
         session,
         topik="bunga",
-        pertanyaan_kanonik=PERTANYAAN_PRODUKSI_EKSPOR,
+        pertanyaan_kanonik=PERTANYAAN_MIKRO_PRODUKSI_EKSPOR,
         isi="Sektor produksi: 6% efektif per tahun secara tetap.",
     )
-    konteks = KonteksBunga(kategori=KategoriKur.mikro_kecil, sektor=SektorUsaha.produksi)
+    konteks = KonteksBunga(kategori=KategoriKur.mikro, sektor=SektorUsaha.produksi)
 
     hasil = jawab_bunga_kur(session, konteks)
 
     assert isinstance(hasil, JawabanTerkutip)
     assert "tetap" in hasil.isi
     assert "6%" in hasil.isi
+
+
+def test_guard_bunga_mikro_nonekspor_beda_dari_kecil_nonekspor(session: Session):
+    """Koreksi load-bearing (Lampiran A.2): Mikro dan Kecil non-ekspor adalah
+    entri BERBEDA, tidak boleh saling menjawab silang."""
+    _entri(
+        session,
+        topik="bunga",
+        pertanyaan_kanonik=PERTANYAAN_MIKRO_NONEKSPOR,
+        isi="Mikro non-ekspor: 6% akad pertama, 7% akad kedua, maks 2 akad.",
+    )
+    _entri(
+        session,
+        topik="bunga",
+        pertanyaan_kanonik=PERTANYAAN_KECIL_NONEKSPOR,
+        isi="Kecil non-ekspor: 6%, 7%, 8%, 9% berjenjang, akumulasi maks Rp500 juta.",
+    )
+
+    mikro = jawab_bunga_kur(
+        session,
+        KonteksBunga(
+            kategori=KategoriKur.mikro, sektor=SektorUsaha.perdagangan, berorientasi_ekspor=False
+        ),
+    )
+    kecil = jawab_bunga_kur(
+        session,
+        KonteksBunga(
+            kategori=KategoriKur.kecil, sektor=SektorUsaha.perdagangan, berorientasi_ekspor=False
+        ),
+    )
+
+    assert isinstance(mikro, JawabanTerkutip) and isinstance(kecil, JawabanTerkutip)
+    assert mikro.isi != kecil.isi
+    assert "maks 2 akad" in mikro.isi
+    assert "Rp500 juta" in kecil.isi
+
+
+def test_guard_bunga_khusus_dan_pmi_tak_butuh_sektor(session: Session):
+    """Khusus dan PMI flat, tanpa cabang sektor/ekspor sama sekali."""
+    _entri(session, topik="bunga", pertanyaan_kanonik=PERTANYAAN_KHUSUS, isi="Khusus: 6% flat.")
+    _entri(session, topik="bunga", pertanyaan_kanonik=PERTANYAAN_PMI, isi="PMI: 6% flat.")
+
+    khusus = jawab_bunga_kur(session, KonteksBunga(kategori=KategoriKur.khusus))
+    pmi = jawab_bunga_kur(session, KonteksBunga(kategori=KategoriKur.pmi))
+
+    assert isinstance(khusus, JawabanTerkutip)
+    assert isinstance(pmi, JawabanTerkutip)
 
 
 def test_guard_bunga_super_mikro_tak_butuh_sektor(session: Session):
@@ -222,28 +272,47 @@ def test_guard_tanpa_jalur_bypass(session: Session):
         assert isinstance(hasil, JawabanTerkutip | Penolakan)
 
 
-def test_guard_adversarial_paksa_tebak(session: Session):
-    """I1/I5 — walau konteks bunga lengkap (user "memaksa" jawaban), guard
-    tetap menolak selama satu-satunya entri yang cocok belum layak-jawab.
-
-    Memakai state DB nyata: empat entri bunga dari `panduan_kur_bunga.seed`
-    semuanya masih `status=draft` (belum diverifikasi manusia ke pasal resmi,
-    lihat `docs/checklist-verifikasi-bunga-kur.md`) — skenario adversarial
-    paling realistis yang ada di produk ini hari ini.
+def test_guard_menjawab_data_aktif_asli_lewat_jalur_nyata(session: Session):
+    """I1/I5, versi positif — sejak A1 terverifikasi (2026-07-28), entri seed
+    `panduan_kur_bunga` berstatus `aktif`: konteks bunga lengkap SEKARANG
+    harus dijawab, bukan ditolak. (Sebelum A1, test ini menjadi
+    `test_guard_adversarial_paksa_tebak` dan menuntut Penolakan — draft lama
+    memang wajib ditolak. D1 membalik premis itu dengan sengaja.)
     """
     seed_bunga(session)
     konteks_lengkap = [
         KonteksBunga(kategori=KategoriKur.super_mikro),
-        KonteksBunga(kategori=KategoriKur.mikro_kecil, sektor=SektorUsaha.produksi),
+        KonteksBunga(kategori=KategoriKur.mikro, sektor=SektorUsaha.produksi),
+        KonteksBunga(kategori=KategoriKur.kecil, sektor=SektorUsaha.produksi),
         KonteksBunga(
-            kategori=KategoriKur.mikro_kecil,
+            kategori=KategoriKur.mikro,
             sektor=SektorUsaha.perdagangan,
             berorientasi_ekspor=False,
         ),
+        KonteksBunga(
+            kategori=KategoriKur.kecil,
+            sektor=SektorUsaha.perdagangan,
+            berorientasi_ekspor=False,
+        ),
+        KonteksBunga(kategori=KategoriKur.khusus),
+        KonteksBunga(kategori=KategoriKur.pmi),
     ]
     for konteks in konteks_lengkap:
         hasil = jawab_bunga_kur(session, konteks)
-        assert isinstance(hasil, Penolakan)
+        assert isinstance(hasil, JawabanTerkutip), konteks
+        assert hasil.sumber_url and hasil.pasal_rujukan
+
+
+def test_guard_bunga_generik_masih_minta_klarifikasi_walau_data_aktif(session: Session):
+    """I6/AC7 tetap berlaku sekalipun data sudah aktif — konteks kosong/parsial
+    selalu minta klarifikasi, tak pernah jatuh ke entri overview sebagai
+    jawaban tarif final (`docs/checklist-verifikasi-bunga-kur.md`)."""
+    seed_bunga(session)
+    hasil = jawab_bunga_kur(session, KonteksBunga())
+    assert isinstance(hasil, Penolakan)
+
+    parsial = jawab_bunga_kur(session, KonteksBunga(kategori=KategoriKur.mikro))
+    assert isinstance(parsial, Penolakan)
 
 
 # ── jawab_panduan (guard generik lintas-topik) ──────────────────────────────
@@ -275,4 +344,4 @@ def test_semua_entri_bunga_tersimpan_sesuai_topik(session: Session):
     """Sanity check query select tetap benar meski tabel punya entri lintas topik."""
     seed_bunga(session)
     semua_bunga = session.scalars(select(PanduanEntry).where(PanduanEntry.topik == "bunga")).all()
-    assert len(semua_bunga) == 4
+    assert len(semua_bunga) == 8

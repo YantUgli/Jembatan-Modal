@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-07-28 — Bunga KUR draft → aktif; `KategoriKur` pecah Mikro/Kecil (D1)
+
+- **Konteks:** Verifikasi A1 (teks Permenko 1/2026, `docs/regulasi/2026PemenkoEkon001.pdf`)
+  selesai — nomor pasal, tarif, dan `sumber_url` final terkonfirmasi manusia
+  (lihat rencana eksekusi Lampiran A). Ini gerbang pertama dari dua gerbang
+  yang menahan asisten KUR (4c): entri `panduan_entries` topik `bunga` boleh
+  naik dari `draft` ke `aktif`.
+
+- **Keputusan:** Seed `app/seeds/panduan_kur_bunga.py` ditulis ulang dari 4
+  entri jadi 8 — dipecah per **jenis KUR × sektor**, bukan sektor saja.
+  `KategoriKur` di `app/services/panduan_kur.py` pecah `mikro_kecil` (satu
+  nilai gabungan) jadi `mikro`/`kecil` terpisah, plus `khusus`/`pmi` baru.
+  Semua 8 entri `status=aktif`, `sumber_url` = URL `Details/...` BPK (bukan
+  placeholder). Seed diubah dari "skip bila versi sudah ada" jadi upsert per
+  `pertanyaan_kanonik`, supaya database yang sudah kadung menyimpan draft lama
+  ikut ter-upgrade saat seed dijalankan ulang, bukan diam-diam dilewati.
+
+- **Alasan:** Draft lama menulis "perdagangan non-ekspor tetap berjenjang
+  6-7-8-9%" sebagai aturan umum Mikro **dan** Kecil. Teks resmi membedakan:
+  KUR Mikro non-ekspor berjenjang 6%→7% dan dibatasi **maksimal 2 akad**
+  (Pasal 37 (1) b + Pasal 36 (3) b); KUR Kecil non-ekspor berjenjang
+  6→7→8→9% dengan akumulasi plafon maksimal Rp500 juta (Pasal 44 (1) b +
+  Pasal 43 (3) b). Menyeragamkan keduanya di satu entri/kategori enum akan
+  memberi pengguna KUR Mikro info batas akad yang salah (Kecil tak dibatasi
+  frekuensi, hanya akumulasi plafon) — persis kesalahan yang guard 4c
+  (`_layak_jawab`/`pilih_jawaban`) dirancang untuk dicegah di lapisan
+  kelayakan, tapi tidak bisa dicegah bila datanya sendiri sudah salah pecah.
+  Khusus dan PMI ditambahkan karena keduanya ada di Lampiran A tapi belum
+  punya entri sama sekali di seed lama.
+
+- **Konsekuensi:**
+  - `pytest tests/test_panduan_kur.py tests/test_seed_panduan_kur_bunga.py -q`
+    hijau (33 test) — termasuk test baru yang mengunci Mikro≠Kecil non-ekspor
+    dan Khusus/PMI tak butuh sektor.
+  - Topik `agunan` (larangan agunan tambahan Pasal 20, sanksi Pasal 21) belum
+    digarap di slice ini — di luar cakupan "bunga" yang diminta D1.
+  - Router 4c (§7 rencana eksekusi) sekarang **unblocked**: ada entri `aktif`
+    untuk dikutip. Belum dibangun — itu tugas terpisah (C1/C2).
+  - `docs/checklist-verifikasi-bunga-kur.md` diperbarui jadi catatan riwayat
+    (checklist tercentang), bukan lagi daftar kerja terbuka.
+
+---
+
 ## 2026-07-27 — Guard aturan #4 (`app/services/panduan_kur.py`), sebelum router 4c ditulis
 
 - **Konteks:** `SPEC_GUARD_4C.md` (dokumen kontrak dari pengguna) meminta guard

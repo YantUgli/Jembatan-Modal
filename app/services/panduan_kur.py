@@ -31,8 +31,12 @@ from sqlalchemy.orm import Session
 
 from app.models import PanduanEntry, StatusPanduan, TingkatSumber
 from app.seeds.panduan_kur_bunga import (
-    PERTANYAAN_PERDAGANGAN_NONEKSPOR,
-    PERTANYAAN_PRODUKSI_EKSPOR,
+    PERTANYAAN_KECIL_NONEKSPOR,
+    PERTANYAAN_KECIL_PRODUKSI_EKSPOR,
+    PERTANYAAN_KHUSUS,
+    PERTANYAAN_MIKRO_NONEKSPOR,
+    PERTANYAAN_MIKRO_PRODUKSI_EKSPOR,
+    PERTANYAAN_PMI,
     PERTANYAAN_SUPER_MIKRO,
 )
 
@@ -132,8 +136,19 @@ def jawab_panduan(
 
 
 class KategoriKur(str, enum.Enum):
+    """Jenis KUR — **Mikro dan Kecil dipisah**, bukan digabung.
+
+    Koreksi load-bearing (Lampiran A.2 rencana eksekusi, 2026-07-28): jenjang
+    non-ekspor Mikro (6→7%, maks 2 akad) berbeda dari Kecil (6→7→8→9%,
+    akumulasi maks Rp500jt) — menyeragamkan keduanya di satu nilai enum
+    `mikro_kecil` adalah kesalahan yang guard ini dirancang untuk menangkap.
+    """
+
     super_mikro = "super_mikro"
-    mikro_kecil = "mikro_kecil"
+    mikro = "mikro"
+    kecil = "kecil"
+    khusus = "khusus"
+    pmi = "pmi"
 
 
 class SektorUsaha(str, enum.Enum):
@@ -146,7 +161,9 @@ class KonteksBunga:
     """Slot yang harus terisi sebelum bunga spesifik boleh dikutip (I6).
 
     `None` pada sebuah field = belum diketahui, bukan asumsi netral apa pun —
-    guard meminta klarifikasi, tidak menebak nilai default.
+    guard meminta klarifikasi, tidak menebak nilai default. `sektor` dan
+    `berorientasi_ekspor` hanya relevan untuk kategori `mikro`/`kecil` —
+    `super_mikro`/`khusus`/`pmi` tidak bercabang sektor sama sekali.
     """
 
     kategori: KategoriKur | None = None
@@ -154,30 +171,47 @@ class KonteksBunga:
     berorientasi_ekspor: bool | None = None
 
 
+_PRODUKSI_EKSPOR = {
+    KategoriKur.mikro: PERTANYAAN_MIKRO_PRODUKSI_EKSPOR,
+    KategoriKur.kecil: PERTANYAAN_KECIL_PRODUKSI_EKSPOR,
+}
+_NONEKSPOR = {
+    KategoriKur.mikro: PERTANYAAN_MIKRO_NONEKSPOR,
+    KategoriKur.kecil: PERTANYAAN_KECIL_NONEKSPOR,
+}
+
+
 def _pertanyaan_bunga(konteks: KonteksBunga) -> str | None:
     """Petakan konteks ke `pertanyaan_kanonik` entri spesifik-segmen, atau
     `None` bila slot penentu belum terisi (guard lalu meminta klarifikasi).
 
     Produksi dan perdagangan-berorientasi-ekspor berbagi entri yang sama
-    (flat 6% tetap) — `bunga-produksi-ekspor`; hanya perdagangan non-ekspor
-    yang memakai skema berjenjang (`docs/checklist-verifikasi-bunga-kur.md`).
+    per kategori (flat 6% tetap); hanya perdagangan non-ekspor yang memakai
+    skema berjenjang, dan jenjangnya **beda antara Mikro dan Kecil**
+    (`docs/checklist-verifikasi-bunga-kur.md`). `khusus`/`pmi` flat tanpa
+    sektor sama sekali — ekspor bukan atribut yang boleh diasumsikan (A.4).
     """
     if konteks.kategori is None:
         return None
     if konteks.kategori is KategoriKur.super_mikro:
         return PERTANYAAN_SUPER_MIKRO
+    if konteks.kategori is KategoriKur.khusus:
+        return PERTANYAAN_KHUSUS
+    if konteks.kategori is KategoriKur.pmi:
+        return PERTANYAAN_PMI
 
+    # Sisanya: mikro/kecil — bercabang sektor & (bila perdagangan) ekspor.
     if konteks.sektor is None:
         return None
     if konteks.sektor is SektorUsaha.produksi:
-        return PERTANYAAN_PRODUKSI_EKSPOR
+        return _PRODUKSI_EKSPOR[konteks.kategori]
 
     if konteks.berorientasi_ekspor is None:
         return None
     return (
-        PERTANYAAN_PRODUKSI_EKSPOR
+        _PRODUKSI_EKSPOR[konteks.kategori]
         if konteks.berorientasi_ekspor
-        else PERTANYAAN_PERDAGANGAN_NONEKSPOR
+        else _NONEKSPOR[konteks.kategori]
     )
 
 

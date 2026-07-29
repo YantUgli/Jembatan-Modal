@@ -5,6 +5,95 @@
 
 ---
 
+## 2026-07-29 — Jawaban agunan KUR plafon-kondisional (F2)
+
+- **Konteks:** `docs/plan-lanjutan.md` bagian "Ditahan" menamai F2 sebagai
+  follow-up dari E2 (2026-07-28): entri overview agunan lama
+  (`app/seeds/panduan_kur_agunan.py`, `pertanyaan_kanonik="Apakah KUR butuh
+  agunan tambahan?"`) plafon-agnostik — menggabungkan larangan Pasal 20(1),
+  pengecualian Pasal 20(2), dan sanksi Pasal 21 dalam satu blok teks, tanpa
+  bisa menjawab pertanyaan bernominal ("pinjam 200 juta, butuh agunan
+  tidak?"). Precondition F2 (dicatat 2026-07-28 E2 butir 4): slot eksplisit
+  nominal plafon (pola sama `berorientasi_ekspor`) + cara membandingkan
+  ambang Rp100 juta tanpa LLM melakukan aritmatika (aturan #1).
+
+- **Keputusan:**
+  1. `PesanMasuk.plafon_diajukan: int | None` (Rupiah penuh, bukan "juta")
+     dan `PesanMasuk.sektor_pertanian_khusus: bool | None` (`app/api/main.py`)
+     — slot eksplisit baru, tak pernah diekstrak dari kalimat bebas.
+     `plafon_diajukan <= 0` → 422 di handler `/chat`, pola sama validasi
+     enum `jenis_kur`/`sektor_usaha` yang sudah ada.
+  2. `KonteksAgunan` (dataclass frozen, `app/services/panduan_kur.py`):
+     `plafon: int | None`, `sektor_pertanian_khusus: bool | None` — struktur
+     sejajar `KonteksBunga`. `_AMBANG_AGUNAN = 100_000_000` (konstanta int)
+     dibandingkan `<=` polos di lapisan service — nol aritmatika di
+     prompt/orkestrator (aturan #1).
+  3. `jawab_agunan_kur(session, konteks)` bercabang: plafon `None` →
+     klarifikasi; `plafon <= ambang` → larangan (Pasal 20(1)+21, tanpa peduli
+     sektor); `plafon > ambang` dan sektor pertanian khusus belum diketahui →
+     klarifikasi; `True` → pengecualian (Pasal 20(2) saja); `False` → di luar
+     larangan (Pasal 20(1)+20(2), regulasi diam soal larangan/izin di luar
+     itu — **tidak** menyimpulkan "penyalur boleh mensyaratkan agunan sesuai
+     kebijakan mereka", itu bukan fakta yang ada di Lampiran A.3).
+  4. **Satu konstanta klarifikasi** `_KLARIFIKASI_AGUNAN` (bukan satu per
+     slot yang hilang) — mengikuti pola `_KLARIFIKASI_BUNGA`: satu pesan
+     statis yang menjelaskan seluruh pohon keputusan, dipakai di kedua titik
+     cabang yang belum terisi. Konstanta ini memuat "Rp100 juta" (ambang
+     kategorik yang sudah terverifikasi & publik) — beda dengan
+     `_KLARIFIKASI_BUNGA` yang testnya menolak digit sama sekali karena di
+     sana risikonya kebocoran tarif spesifik, bukan ambang kategorik.
+  5. **Data**: entri overview lama dipecah jadi tiga entri baru di
+     `app/seeds/panduan_kur_agunan.py` (`PERTANYAAN_AGUNAN_DIBAWAH_AMBANG`,
+     `_DIATAS_AMBANG_PENGECUALIAN`, `_DIATAS_AMBANG_TANPA_PENGECUALIAN`),
+     masing-masing hanya mengutip pasal relevan ke skenarionya (aturan #4).
+     Ketiganya `status=aktif` langsung — pengecualian yang sama seperti E2,
+     bukan preseden umum untuk topik KUR berikutnya.
+  6. **Entri overview lama dipensiunkan** ke `status=superseded` oleh
+     `seed()` (bila sudah ada di DB), `digantikan_oleh` dibiarkan `None`
+     dengan komentar kode — satu entri lama dipecah jadi tiga, tak ada satu
+     FK target tunggal yang valid tanpa memalsukan jejak audit. **Ini
+     penggunaan pertama transisi `status→superseded` lewat kode seed di
+     seluruh codebase** — `panduan_kur_bunga.py` tidak pernah mempensiunkan
+     entri; ini bukan pola yang sudah mapan, dicatat eksplisit di sini
+     supaya sesi berikutnya tidak membaca ini sebagai preseden establish.
+  7. **BREAKING CHANGE, disengaja**: `topik_kur="agunan"` tanpa
+     `plafon_diajukan` sekarang meminta klarifikasi nominal, TIDAK LAGI
+     menjawab overview plafon-agnostik lama — konsisten dengan I6 (konteks
+     kosong/parsial selalu klarifikasi, tak pernah jatuh ke jawaban umum
+     sebagai default) yang sudah berlaku untuk bunga sejak awal.
+
+- **Alasan:** Butir 1-3 memenuhi kedua precondition F2 persis seperti yang
+  dicatat 2026-07-28 — perbandingan plafon hidup di service layer, bukan
+  LLM. Butir 4 dipilih setelah membandingkan ke pola `_KLARIFIKASI_BUNGA`:
+  bunga juga tidak menulis pesan berbeda per titik cabang yang hilang
+  (kategori/sektor/ekspor semua dijelaskan dalam satu paragraf statis) —
+  menirunya persis menjaga `jawab_agunan_kur` identik strukturnya dengan
+  `jawab_bunga_kur`, less code, less divergence. Butir 3 & 5 sengaja tidak
+  menyimpulkan "penyalur boleh mensyaratkan agunan di luar dua kondisi
+  terverifikasi" — Lampiran A.3 hanya menyatakan larangan + pengecualiannya,
+  bukan izin afirmatif; converse dari larangan bukan otomatis izin, dan
+  menyatakannya sebagai fakta bersumber adalah pelanggaran aturan #4/#2
+  yang sama dengan mengarang angka. Butir 7 breaking disengaja karena
+  konsistensi I6 lebih penting daripada kompatibilitas mundur diam-diam —
+  klien lama yang mengandalkan jawaban overview umum akan mulai menerima
+  klarifikasi, bukan silent-different-answer yang lebih berbahaya.
+
+- **Konsekuensi:**
+  - `pytest tests/test_panduan_kur.py tests/test_kanal_panduan_kur.py
+    tests/test_seed_panduan_kur_agunan.py -q` hijau, termasuk regresi
+    eksplisit `tanya_kur topik="bunga"` tak berubah sama sekali.
+  - `pytest tests/ -q` seluruhnya hijau (628 test).
+  - `VERSI_KONTRAK` (`app/kanal/kontrak.py`) tidak naik — `KartuPanduanKur`
+    bentuknya tidak berubah, hanya isi teksnya berbeda per skenario.
+  - `docs/plan-lanjutan.md` bagian "Ditahan": F2 dipindah keluar, ditandai
+    selesai.
+  - Klien lama yang memanggil `topik_kur="agunan"` tanpa `plafon_diajukan`
+    sekarang menerima `KartuKlarifikasi`, bukan lagi `KartuPanduanKur` —
+    breaking change yang harus dikomunikasikan ke tim frontend/BFF sebelum
+    dirilis.
+
+---
+
 ## 2026-07-28 — Snapshot skor harian dipicu lazy di `/sesi` (E1)
 
 - **Konteks:** `simpan_snapshot_skor` (`app/services/skor.py`) sudah ditulis &

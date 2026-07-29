@@ -120,9 +120,10 @@ Tergantung opsi: `app/api/main.py` (opsi A/B) + `app/services/skor.py`
 **Status: SELESAI (2026-07-28)** — lihat `docs/keputusan.md` 2026-07-28
 ("Topik agunan KUR..."). `app/seeds/panduan_kur_agunan.py`,
 `kartu_panduan_kur(..., topik=...)`, `PesanMasuk.topik_kur` + validasi 422.
-Follow-up bernama (F2, jawaban plafon-kondisional) dipindah ke bagian
-"Ditahan" di bawah. Sisa dokumen di bawah ini dibiarkan apa adanya sebagai
-catatan desain, bukan tugas terbuka lagi.
+Follow-up bernama (F2, jawaban plafon-kondisional) **selesai 2026-07-29** —
+lihat bagian "F2" di bawah dan `docs/keputusan.md` 2026-07-29. Sisa dokumen
+di bawah ini dibiarkan apa adanya sebagai catatan desain, bukan tugas
+terbuka lagi.
 
 ### Precondition
 Tidak ada yang menghalangi mulai — data sudah terverifikasi (Lampiran A.3,
@@ -193,20 +194,26 @@ generik topik apa pun), `app/api/main.py`, `tests/test_panduan_kur.py` +
 
 ---
 
+## F2 — Jawaban agunan KUR plafon-kondisional
+
+**Status: SELESAI (2026-07-29)** — lihat `docs/keputusan.md` 2026-07-29
+("Jawaban agunan KUR plafon-kondisional"). `KonteksAgunan` +
+`jawab_agunan_kur` (`app/services/panduan_kur.py`), tiga entri baru di
+`app/seeds/panduan_kur_agunan.py` (entri overview lama dipensiunkan ke
+`superseded`), dispatch tiga arah di `kartu_panduan_kur`
+(`app/kanal/orkestrator.py`), `PesanMasuk.plafon_diajukan` +
+`.sektor_pertanian_khusus` (`app/api/main.py`). BREAKING CHANGE disengaja:
+`topik_kur="agunan"` tanpa `plafon_diajukan` sekarang minta klarifikasi,
+bukan lagi jawaban overview plafon-agnostik lama — lihat entri
+`docs/keputusan.md` untuk detail dan alasan.
+
+---
+
 ## Ditahan (precondition belum terpenuhi — jangan mulai)
 
 Ini bukan tugas untuk sesi berikutnya; dicatat ulang di sini supaya tidak
 tergoda mulai duluan karena "kelihatan mudah setelah B3".
 
-- **F2 — Jawaban agunan plafon-kondisional.** E2 (di atas, selesai) hanya
-  menjawab aturan agunan secara umum, bukan pertanyaan bernominal ("pinjam
-  200 juta, butuh agunan tidak?"). Precondition sebelum digarap: (a) slot
-  eksplisit nominal plafon di `PesanMasuk` (pola sama dengan
-  `berorientasi_ekspor` — tak pernah diekstrak dari kalimat bebas), dan
-  (b) keputusan bagaimana ambang Rp100 juta dibandingkan tanpa LLM melakukan
-  aritmatika (aturan #1) — kemungkinan cukup perbandingan angka di service
-  layer, tapi perlu dikonfirmasi bukan sekadar template string. Lihat
-  `docs/keputusan.md` 2026-07-28 (E2) butir 4.
 - **Pemetaan kolom CSV → transaksi** (`petakan_baris_generik`,
   `app/impor/csv_generik.py`) — precondition: fixture A3 (contoh berkas impor
   nyata per format) belum ada. Tetap `NotImplementedError`.

@@ -18,7 +18,7 @@ from app.kanal.orkestrator import kartu_panduan_kur
 from app.models import Business, PanduanEntry, StatusPanduan, TingkatSumber
 from app.seeds.panduan_kur_agunan import seed as seed_agunan
 from app.seeds.panduan_kur_bunga import seed as seed_bunga
-from app.services.panduan_kur import KategoriKur, KonteksBunga, SektorUsaha
+from app.services.panduan_kur import KategoriKur, KonteksAgunan, KonteksBunga, SektorUsaha
 
 TGL = date(2026, 7, 28)
 
@@ -164,13 +164,13 @@ def test_kartu_panduan_kur_disclaimer_selalu_ada(session: Session):
     assert any("bukan jaminan" in c for c in kartu.catatan)
 
 
-# ── Topik agunan (E2, 2026-07-28) — generik, tanpa cabang kategori/sektor ───
+# ── Topik agunan (F2, 2026-07-29) — bercabang plafon × sektor pertanian ─────
 
 
 def test_kartu_panduan_kur_agunan_menjawab_entri_aktif(session: Session):
     seed_agunan(session)
 
-    hasil = kartu_panduan_kur(session, topik="agunan")
+    hasil = kartu_panduan_kur(session, KonteksAgunan(plafon=50_000_000), topik="agunan")
 
     kartu = hasil.kartu[0]
     assert isinstance(kartu, KartuPanduanKur)
@@ -180,17 +180,56 @@ def test_kartu_panduan_kur_agunan_menjawab_entri_aktif(session: Session):
 
 
 def test_kartu_panduan_kur_agunan_belum_di_seed_ditolak_bukan_kosong(session: Session):
-    """Belum ada entri agunan tersimpan → Penolakan/klarifikasi, bukan kartu
-    jawaban kosong atau exception."""
+    """Konteks lengkap tapi belum ada entri agunan tersimpan → Penolakan
+    "belum ada panduan", bukan klarifikasi plafon/kartu jawaban kosong."""
+    hasil = kartu_panduan_kur(session, KonteksAgunan(plafon=50_000_000), topik="agunan")
+
+    kartu = hasil.kartu[0]
+    assert isinstance(kartu, KartuKlarifikasi)
+    assert "belum punya panduan" in kartu.pertanyaan
+
+
+def test_kartu_panduan_kur_agunan_tanpa_plafon_minta_klarifikasi(session: Session):
+    """F2 breaking change (disengaja): `topik="agunan"` tanpa plafon TIDAK LAGI
+    menjawab overview plafon-agnostik lama — ia meminta klarifikasi nominal,
+    sama seperti bunga meminta klarifikasi kategori."""
+    seed_agunan(session)
+
     hasil = kartu_panduan_kur(session, topik="agunan")
 
     assert isinstance(hasil.kartu[0], KartuKlarifikasi)
 
 
+def test_kartu_panduan_kur_agunan_diatas_ambang_pengecualian(session: Session):
+    seed_agunan(session)
+
+    hasil = kartu_panduan_kur(
+        session, KonteksAgunan(plafon=200_000_000, sektor_pertanian_khusus=True), topik="agunan"
+    )
+
+    kartu = hasil.kartu[0]
+    assert isinstance(kartu, KartuPanduanKur)
+    assert "petani tebu" in kartu.isi
+    assert kartu.pasal_rujukan == "Pasal 20 (2)"
+
+
+def test_kartu_panduan_kur_agunan_diatas_ambang_tanpa_pengecualian(session: Session):
+    seed_agunan(session)
+
+    hasil = kartu_panduan_kur(
+        session, KonteksAgunan(plafon=200_000_000, sektor_pertanian_khusus=False), topik="agunan"
+    )
+
+    kartu = hasil.kartu[0]
+    assert isinstance(kartu, KartuPanduanKur)
+    assert "tidak mengatur" in kartu.isi
+    assert "dapat mensyaratkan" not in kartu.isi
+
+
 def test_kartu_panduan_kur_agunan_disclaimer_selalu_ada(session: Session):
     seed_agunan(session)
 
-    hasil = kartu_panduan_kur(session, topik="agunan")
+    hasil = kartu_panduan_kur(session, KonteksAgunan(plafon=50_000_000), topik="agunan")
 
     kartu = hasil.kartu[0]
     assert isinstance(kartu, KartuPanduanKur)
@@ -269,7 +308,7 @@ def test_aksi_tanya_kur_topik_agunan_mengembalikan_kartu(session: Session, busin
     seed_agunan(session)
 
     data = api.chat(
-        api.PesanMasuk(aksi="tanya_kur", topik_kur="agunan"),
+        api.PesanMasuk(aksi="tanya_kur", topik_kur="agunan", plafon_diajukan=50_000_000),
         session=session,
         business=business,
         adapter=None,
@@ -277,6 +316,62 @@ def test_aksi_tanya_kur_topik_agunan_mengembalikan_kartu(session: Session, busin
 
     assert data["kartu"][0]["tipe"] == "panduan_kur"
     assert "Rp100 juta" in data["kartu"][0]["isi"]
+
+
+def test_aksi_tanya_kur_agunan_tanpa_plafon_minta_klarifikasi(session: Session, business: Business):
+    """Lock-in breaking change F2 di lapisan HTTP: tanpa `plafon_diajukan`,
+    topik agunan tidak lagi menjawab overview lama."""
+    pytest.importorskip("fastapi", reason="lapisan API opsional (extras `api`)")
+    from app.api import main as api
+
+    seed_agunan(session)
+
+    data = api.chat(
+        api.PesanMasuk(aksi="tanya_kur", topik_kur="agunan"),
+        session=session,
+        business=business,
+        adapter=None,
+    )
+
+    assert data["kartu"][0]["tipe"] == "klarifikasi"
+
+
+def test_aksi_tanya_kur_agunan_plafon_negatif_ditolak(session: Session, business: Business):
+    pytest.importorskip("fastapi", reason="lapisan API opsional (extras `api`)")
+    from fastapi import HTTPException
+
+    from app.api import main as api
+
+    with pytest.raises(HTTPException) as e:
+        api.chat(
+            api.PesanMasuk(aksi="tanya_kur", topik_kur="agunan", plafon_diajukan=-1),
+            session=session,
+            business=business,
+            adapter=None,
+        )
+    assert e.value.status_code == 422
+
+
+def test_aksi_tanya_kur_agunan_diatas_ambang_dengan_sektor(session: Session, business: Business):
+    pytest.importorskip("fastapi", reason="lapisan API opsional (extras `api`)")
+    from app.api import main as api
+
+    seed_agunan(session)
+
+    data = api.chat(
+        api.PesanMasuk(
+            aksi="tanya_kur",
+            topik_kur="agunan",
+            plafon_diajukan=200_000_000,
+            sektor_pertanian_khusus=True,
+        ),
+        session=session,
+        business=business,
+        adapter=None,
+    )
+
+    assert data["kartu"][0]["tipe"] == "panduan_kur"
+    assert "Pasal 20 (2)" in data["kartu"][0]["pasal_rujukan"]
 
 
 def test_aksi_tanya_kur_topik_asing_ditolak(session: Session, business: Business):

@@ -53,7 +53,7 @@ from app.services.auth import (
     resolusi_sesi,
 )
 from app.services.impor import TidakBisaDiterima
-from app.services.panduan_kur import KategoriKur, KonteksBunga, SektorUsaha
+from app.services.panduan_kur import KategoriKur, KonteksAgunan, KonteksBunga, SektorUsaha
 from app.services.periode import Periode, periode_dari_label
 from app.services.skor import hitung_skor, simpan_snapshot_skor
 
@@ -177,6 +177,13 @@ class PesanMasuk(BaseModel):
     jenis_kur: str | None = None  # nilai KategoriKur
     sektor_usaha: str | None = None  # nilai SektorUsaha
     berorientasi_ekspor: bool | None = None
+    # Slot untuk topik_kur="agunan" (F2, keputusan.md 2026-07-29). Rupiah
+    # penuh, bukan "juta" — nilai <= 0 ditolak 422 di handler /chat, tak
+    # pernah diam-diam dianggap "belum diketahui". `sektor_pertanian_khusus`
+    # hanya relevan di atas ambang Rp100 juta; guard mengabaikannya di bawah
+    # ambang (lihat `app.services.panduan_kur.KonteksAgunan`).
+    plafon_diajukan: int | None = None
+    sektor_pertanian_khusus: bool | None = None
     # Periode opsional (ISO) untuk tanya_untung/tanya_keuangan; default bulan
     # berjalan diselesaikan server-side.
     mulai: date | None = None
@@ -332,9 +339,21 @@ def chat(
             raise HTTPException(
                 422, f"sektor_usaha tidak dikenal: {pesan.sektor_usaha!r}"
             ) from None
-        konteks = KonteksBunga(
-            kategori=kategori, sektor=sektor, berorientasi_ekspor=pesan.berorientasi_ekspor
-        )
+        if pesan.plafon_diajukan is not None and pesan.plafon_diajukan <= 0:
+            raise HTTPException(
+                422, f"plafon_diajukan harus lebih dari 0: {pesan.plafon_diajukan!r}"
+            )
+
+        konteks: KonteksBunga | KonteksAgunan
+        if topik == "bunga":
+            konteks = KonteksBunga(
+                kategori=kategori, sektor=sektor, berorientasi_ekspor=pesan.berorientasi_ekspor
+            )
+        else:
+            konteks = KonteksAgunan(
+                plafon=pesan.plafon_diajukan,
+                sektor_pertanian_khusus=pesan.sektor_pertanian_khusus,
+            )
         return kartu_panduan_kur(session, konteks, topik=topik).ke_dict()
 
     if pesan.aksi == "lihat_transaksi":

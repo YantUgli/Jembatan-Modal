@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import PanduanEntry, StatusPanduan, TingkatSumber
+from app.seeds.panduan_kur_agunan import PERTANYAAN_AGUNAN, seed as seed_agunan
 from app.seeds.panduan_kur_bunga import (
     PERTANYAAN_KECIL_NONEKSPOR,
     PERTANYAAN_KHUSUS,
@@ -25,9 +26,11 @@ from app.seeds.panduan_kur_bunga import (
 from app.services.panduan_kur import (
     JawabanTerkutip,
     KategoriKur,
+    KonteksAgunan,
     KonteksBunga,
     Penolakan,
     SektorUsaha,
+    jawab_agunan_kur,
     jawab_bunga_kur,
     jawab_panduan,
     pilih_jawaban,
@@ -345,3 +348,75 @@ def test_semua_entri_bunga_tersimpan_sesuai_topik(session: Session):
     seed_bunga(session)
     semua_bunga = session.scalars(select(PanduanEntry).where(PanduanEntry.topik == "bunga")).all()
     assert len(semua_bunga) == 8
+
+
+# ── Agunan: ambang plafon × pengecualian sektor pertanian (F2) ──────────────
+
+
+def test_guard_agunan_plafon_none_minta_klarifikasi(session: Session):
+    """Plafon belum diketahui → klarifikasi, bukan jawaban overview lama."""
+    hasil = jawab_agunan_kur(session, KonteksAgunan())
+    assert isinstance(hasil, Penolakan)
+
+
+def test_guard_agunan_plafon_dibawah_ambang(session: Session):
+    seed_agunan(session)
+    hasil = jawab_agunan_kur(session, KonteksAgunan(plafon=50_000_000))
+    assert isinstance(hasil, JawabanTerkutip)
+    assert "Pasal 20 (1)" in hasil.pasal_rujukan
+    assert "Pasal 21" in hasil.pasal_rujukan
+
+
+def test_guard_agunan_plafon_tepat_ambang_masuk_larangan(session: Session):
+    """Batas Rp100 juta inklusif (`<=`) — Pasal 20(1) 'sampai dengan'."""
+    seed_agunan(session)
+    hasil = jawab_agunan_kur(session, KonteksAgunan(plafon=100_000_000))
+    assert isinstance(hasil, JawabanTerkutip)
+    assert "Pasal 20 (1)" in hasil.pasal_rujukan
+
+
+def test_guard_agunan_plafon_diatas_ambang_tanpa_sektor_minta_klarifikasi(session: Session):
+    seed_agunan(session)
+    hasil = jawab_agunan_kur(session, KonteksAgunan(plafon=200_000_000))
+    assert isinstance(hasil, Penolakan)
+
+
+def test_guard_agunan_plafon_diatas_ambang_dengan_pengecualian(session: Session):
+    seed_agunan(session)
+    hasil = jawab_agunan_kur(
+        session, KonteksAgunan(plafon=200_000_000, sektor_pertanian_khusus=True)
+    )
+    assert isinstance(hasil, JawabanTerkutip)
+    assert "Pasal 20 (2)" in hasil.pasal_rujukan
+    assert "Pasal 21" not in hasil.pasal_rujukan
+
+
+def test_guard_agunan_plafon_diatas_ambang_tanpa_pengecualian(session: Session):
+    seed_agunan(session)
+    hasil = jawab_agunan_kur(
+        session, KonteksAgunan(plafon=200_000_000, sektor_pertanian_khusus=False)
+    )
+    assert isinstance(hasil, JawabanTerkutip)
+    assert "Pasal 20 (1)" in hasil.pasal_rujukan
+    assert "Pasal 20 (2)" in hasil.pasal_rujukan
+    assert "Pasal 21" not in hasil.pasal_rujukan
+
+
+def test_guard_agunan_overview_lama_superseded_tidak_terjawab(session: Session):
+    """F2 memensiunkan entri overview lama (pra-existing, gaya E2) ke
+    `superseded` — tak lagi terjangkau lewat `jawab_panduan` generik."""
+    overview_lama = _entri(
+        session,
+        topik="agunan",
+        pertanyaan_kanonik=PERTANYAAN_AGUNAN,
+        isi="Isi overview lama plafon-agnostik (E2).",
+    )
+    overview_lama.versi_regulasi = "Permenko 1/2026"
+    session.flush()
+
+    seed_agunan(session)
+
+    session.refresh(overview_lama)
+    assert overview_lama.status is StatusPanduan.superseded
+    hasil = jawab_panduan(session, "agunan", pertanyaan_kanonik=PERTANYAAN_AGUNAN)
+    assert isinstance(hasil, Penolakan)

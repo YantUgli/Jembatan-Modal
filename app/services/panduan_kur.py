@@ -30,6 +30,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import PanduanEntry, StatusPanduan, TingkatSumber
+from app.seeds.panduan_kur_agunan import (
+    PERTANYAAN_AGUNAN_DIATAS_AMBANG_PENGECUALIAN,
+    PERTANYAAN_AGUNAN_DIATAS_AMBANG_TANPA_PENGECUALIAN,
+    PERTANYAAN_AGUNAN_DIBAWAH_AMBANG,
+)
 from app.seeds.panduan_kur_bunga import (
     PERTANYAAN_KECIL_NONEKSPOR,
     PERTANYAAN_KECIL_PRODUKSI_EKSPOR,
@@ -43,9 +48,11 @@ from app.seeds.panduan_kur_bunga import (
 __all__ = [
     "JawabanTerkutip",
     "KategoriKur",
+    "KonteksAgunan",
     "KonteksBunga",
     "Penolakan",
     "SektorUsaha",
+    "jawab_agunan_kur",
     "jawab_bunga_kur",
     "jawab_panduan",
     "pilih_jawaban",
@@ -86,6 +93,13 @@ _KLARIFIKASI_BUNGA = (
     "tepat: usahanya kategori Super Mikro (plafon sampai Rp10 juta) atau "
     "Mikro/Kecil? Kalau Mikro/Kecil, usahanya produksi atau perdagangan? "
     "Kalau perdagangan, berorientasi ekspor atau tidak?"
+)
+
+_KLARIFIKASI_AGUNAN = (
+    "Syarat agunan tambahan KUR tergantung plafon yang diajukan. Berapa "
+    "plafon KUR yang mau diajukan? Kalau di atas Rp100 juta, ada satu hal "
+    "lagi: apakah usahanya petani tebu rakyat atau KUR khusus pertanian "
+    "dengan offtaker avalis?"
 )
 
 
@@ -225,6 +239,63 @@ def jawab_bunga_kur(session: Session, konteks: KonteksBunga) -> JawabanTerkutip 
         session.scalars(
             select(PanduanEntry).where(
                 PanduanEntry.topik == "bunga",
+                PanduanEntry.pertanyaan_kanonik == pertanyaan,
+            )
+        ).all()
+    )
+    return pilih_jawaban(kandidat)
+
+
+# ── Agunan: ambang plafon × pengecualian sektor pertanian (F2) ──────────────
+
+# Larangan agunan tambahan berlaku untuk plafon ≤ ambang ini (Pasal 20 (1)).
+# Perbandingan integer polos, bukan LLM (aturan #1) — lihat docs/keputusan.md
+# untuk precondition F2 yang dipenuhi konstanta ini.
+_AMBANG_AGUNAN = 100_000_000
+
+
+@dataclass(frozen=True)
+class KonteksAgunan:
+    """Slot yang harus terisi sebelum jawaban agunan spesifik-plafon boleh
+    dikutip — sama semangat `KonteksBunga` (I6).
+
+    `None` = belum diketahui, guard meminta klarifikasi, tidak menebak.
+    `sektor_pertanian_khusus` hanya relevan ketika `plafon > _AMBANG_AGUNAN`
+    (di bawah ambang, larangan berlaku universal tanpa peduli sektor).
+    """
+
+    plafon: int | None = None
+    sektor_pertanian_khusus: bool | None = None
+
+
+def _pertanyaan_agunan(konteks: KonteksAgunan) -> str | None:
+    """Petakan konteks ke `pertanyaan_kanonik` entri spesifik-skenario, atau
+    `None` bila slot penentu belum terisi (guard lalu meminta klarifikasi).
+    """
+    if konteks.plafon is None:
+        return None
+    if konteks.plafon <= _AMBANG_AGUNAN:
+        return PERTANYAAN_AGUNAN_DIBAWAH_AMBANG
+
+    if konteks.sektor_pertanian_khusus is None:
+        return None
+    return (
+        PERTANYAAN_AGUNAN_DIATAS_AMBANG_PENGECUALIAN
+        if konteks.sektor_pertanian_khusus
+        else PERTANYAAN_AGUNAN_DIATAS_AMBANG_TANPA_PENGECUALIAN
+    )
+
+
+def jawab_agunan_kur(session: Session, konteks: KonteksAgunan) -> JawabanTerkutip | Penolakan:
+    """Guard topik agunan — menolak dengan klarifikasi sebelum plafon/sektor diketahui."""
+    pertanyaan = _pertanyaan_agunan(konteks)
+    if pertanyaan is None:
+        return Penolakan(_KLARIFIKASI_AGUNAN)
+
+    kandidat = list(
+        session.scalars(
+            select(PanduanEntry).where(
+                PanduanEntry.topik == "agunan",
                 PanduanEntry.pertanyaan_kanonik == pertanyaan,
             )
         ).all()

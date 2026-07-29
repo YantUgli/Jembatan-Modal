@@ -1,5 +1,15 @@
+@import "tailwindcss";
+
 /* Sistem desain JembatanModal — diekstrak dari "Warung Bu Sari" (Claude Design).
-   Token + bentuk komponen dibangun ulang bersih; bukan salinan markup mockup. */
+   Token + bentuk komponen dibangun ulang bersih; bukan salinan markup mockup.
+
+   Migrasi Tahap A ke Tailwind (lihat docs/keputusan.md): token & keyframes di
+   bawah didaftarkan ulang di @theme untuk utility Tahap B nanti, tapi TIDAK
+   satu pun className di JSX berubah. Tiap rule di bawah dikonversi ke @apply
+   HANYA untuk deklarasi yang punya padanan utility persis (layout flex/grid,
+   font-weight, border-radius:50%, animasi terdaftar) — warna/bayangan/radius/
+   spacing/ukuran font tetap CSS mentah supaya keluarannya identik dengan
+   sebelum migrasi. */
 
 :root {
   /* Warna */
@@ -30,29 +40,66 @@
   --font: "Plus Jakarta Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
 }
 
+/* Token yang sama, didaftarkan ulang di namespace yang dikenal Tailwind v4
+   supaya utility (bg-hijau, rounded-kartu, dst.) tersedia untuk Tahap B.
+   Nilainya merujuk custom property di :root di atas — bukan disalin — jadi
+   satu-satunya sumber kebenaran tetap satu. */
+@theme {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-kartu: var(--kartu);
+  --color-hijau: var(--hijau);
+  --color-hijau-tua: var(--hijau-tua);
+  --color-hijau-lembut: var(--hijau-lembut);
+  --color-amber: var(--amber);
+  --color-amber-tinta: var(--amber-tinta);
+  --color-amber-tinta2: var(--amber-tinta2);
+  --color-amber-lembut: var(--amber-lembut);
+  --color-tinta: var(--tinta);
+  --color-tinta-60: var(--tinta-60);
+  --color-tinta-50: var(--tinta-50);
+  --color-tinta-45: var(--tinta-45);
+  --color-garis: var(--garis);
+
+  --radius-kartu: var(--r-kartu);
+  --radius-besar: var(--r-besar);
+  --radius-chip: var(--r-chip);
+  --radius-tombol: var(--r-tombol);
+
+  --shadow-kartu: var(--bayang-kartu);
+  --shadow-tombol: var(--bayang-tombol);
+
+  --font-app: var(--font);
+
+  /* Sama persis dengan @keyframes di bawah — dipakai lewat @apply animate-*
+     di rule yang animasinya identik (bukan tebakan, string-nya disalin). */
+  --animate-card-in: cardIn 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  --animate-rise-in: riseIn 0.5s ease both;
+  --animate-dot: dot 1s infinite;
+  --animate-sun: sun 5s ease-in-out infinite;
+}
+
 * {
-  box-sizing: border-box;
+  @apply box-border;
 }
 
 html,
 body {
-  margin: 0;
-  padding: 0;
+  @apply m-0 p-0;
 }
 
 body {
+  @apply overflow-x-hidden;
   background: var(--bg);
   color: var(--tinta);
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
   /* Cegah scroll horizontal di seluruh dokumen (temuan review desain). */
-  overflow-x: hidden;
 }
 
 button {
+  @apply cursor-pointer border-none;
   font-family: inherit;
-  cursor: pointer;
-  border: none;
   background: none;
   color: inherit;
 }
@@ -63,35 +110,27 @@ button {
    trik `position:fixed`/JS resize (yang di mockup memicu masalah). */
 
 .app {
+  @apply flex justify-center;
   min-height: 100dvh;
   background: var(--bg);
-  display: flex;
-  justify-content: center;
 }
 
 .frame {
+  @apply relative overflow-hidden flex flex-col;
   width: 100%;
   max-width: 430px;
   height: 100dvh;
   background: var(--surface);
-  position: relative;
-  overflow: hidden; /* mengurung glow dekoratif → tak ada overflow-x */
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 0 60px rgba(42, 38, 34, 0.08);
+  box-shadow: 0 0 60px rgba(42, 38, 34, 0.08); /* mengurung glow dekoratif → tak ada overflow-x */
 }
 
 /* ── Merek ─────────────────────────────────────────────────────────────── */
 
 .mark {
+  @apply flex items-center justify-center flex-col flex-none;
   border-radius: 9px;
   background: var(--hijau);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
   gap: 2.5px;
-  flex: none;
 }
 .mark span {
   height: 2px;
@@ -105,28 +144,19 @@ button {
 /* ── Layar pembuka ─────────────────────────────────────────────────────── */
 
 .pembuka {
-  position: absolute;
-  inset: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
+  @apply absolute inset-0 overflow-y-auto flex flex-col animate-rise-in;
   padding: 30px 26px 34px;
-  animation: riseIn 0.5s ease both;
 }
 .glow {
-  position: absolute;
+  @apply absolute rounded-full pointer-events-none animate-sun;
   top: -70px;
   right: -40px;
   width: 230px;
   height: 230px;
-  border-radius: 50%;
   background: radial-gradient(circle, rgba(201, 123, 44, 0.2), rgba(201, 123, 44, 0) 70%);
-  animation: sun 5s ease-in-out infinite;
-  pointer-events: none;
 }
 .pembuka-brand {
-  display: flex;
-  align-items: center;
+  @apply flex items-center;
   gap: 9px;
   margin-top: 8px;
 }
@@ -142,37 +172,36 @@ button {
   width: 9px;
 }
 .wordmark {
+  @apply font-bold;
   font-size: 14px;
-  font-weight: 700;
   letter-spacing: -0.01em;
 }
 .pembuka-tengah {
+  @apply flex flex-col justify-center;
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
   padding: 34px 0;
 }
 .salam {
+  @apply font-medium;
   font-size: 19px;
-  font-weight: 500;
   color: var(--tinta-60);
 }
 .nama-usaha {
+  @apply font-extrabold;
   font-size: 44px;
   line-height: 1.04;
-  font-weight: 800;
   letter-spacing: -0.03em;
   margin-top: 2px;
   overflow-wrap: break-word;
 }
 .sub-usaha {
+  @apply font-medium;
   font-size: 14px;
   color: var(--tinta-50);
   margin-top: 12px;
-  font-weight: 500;
 }
 .ajakan-kartu {
+  @apply font-medium;
   background: var(--kartu);
   border: 1px solid var(--garis);
   border-radius: var(--r-besar);
@@ -180,38 +209,34 @@ button {
   box-shadow: 0 2px 14px rgba(42, 38, 34, 0.05);
   font-size: 17px;
   line-height: 1.5;
-  font-weight: 500;
 }
 .honest {
-  display: flex;
+  @apply flex items-start;
   gap: 8px;
-  align-items: flex-start;
   margin-top: 18px;
   padding: 0 2px;
 }
 .honest .titik {
+  @apply rounded-full flex-none;
   width: 7px;
   height: 7px;
-  border-radius: 50%;
   background: var(--hijau);
   margin-top: 6px;
-  flex: none;
 }
 .honest p {
+  @apply font-medium;
   margin: 0;
   font-size: 12.5px;
   line-height: 1.45;
   color: rgba(42, 38, 34, 0.52);
-  font-weight: 500;
 }
 
 .btn-primary {
+  @apply w-full font-bold;
   margin-top: 16px;
-  width: 100%;
   background: var(--hijau);
   color: #fff;
   font-size: 18px;
-  font-weight: 700;
   padding: 18px;
   border-radius: var(--r-tombol);
   box-shadow: var(--bayang-tombol);
@@ -228,14 +253,12 @@ button {
 /* ── Kepala chat ───────────────────────────────────────────────────────── */
 
 .chat-head {
-  display: flex;
-  align-items: center;
+  @apply flex items-center flex-none;
   gap: 10px;
   padding: 14px 18px;
   background: rgba(250, 247, 242, 0.92);
   backdrop-filter: blur(6px);
   border-bottom: 1px solid rgba(42, 38, 34, 0.07);
-  flex: none;
 }
 .chat-head .mark {
   width: 34px;
@@ -249,60 +272,53 @@ button {
   width: 10px;
 }
 .chat-head .judul {
+  @apply font-bold;
   font-size: 15px;
-  font-weight: 700;
   letter-spacing: -0.01em;
 }
 .chat-head .status {
+  @apply flex items-center font-semibold;
   font-size: 11.5px;
   color: var(--hijau);
-  font-weight: 600;
-  display: flex;
-  align-items: center;
   gap: 5px;
 }
 .chat-head .status .dot {
+  @apply rounded-full inline-block;
   width: 6px;
   height: 6px;
-  border-radius: 50%;
   background: var(--hijau);
-  display: inline-block;
 }
 .chat-head .hari {
+  @apply font-semibold;
   font-size: 11.5px;
   color: var(--tinta-45);
-  font-weight: 600;
   margin-left: auto;
 }
 
 /* ── Thread ────────────────────────────────────────────────────────────── */
 
 .thread {
+  @apply overflow-y-auto overflow-x-hidden flex flex-col;
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
   padding: 20px 16px 12px;
-  display: flex;
-  flex-direction: column;
   gap: 14px;
 }
 .thread::-webkit-scrollbar {
   display: none;
 }
 .item {
-  animation: cardIn 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  @apply animate-card-in;
 }
 
 .bubble-user {
-  display: flex;
-  justify-content: flex-end;
+  @apply flex justify-end;
 }
 .bubble-user > div {
+  @apply font-medium;
   max-width: 80%;
   background: #eae3d6;
   color: var(--tinta);
   font-size: 15.5px;
-  font-weight: 500;
   line-height: 1.4;
   padding: 12px 15px;
   border-radius: 18px 18px 5px 18px;
@@ -310,15 +326,13 @@ button {
 }
 
 .bubble-bot {
-  display: flex;
+  @apply flex items-start;
   gap: 9px;
-  align-items: flex-start;
 }
 .avatar {
+  @apply rounded-lg flex-none;
   width: 26px;
   height: 26px;
-  border-radius: 8px;
-  flex: none;
   margin-top: 2px;
 }
 .avatar span {
@@ -331,9 +345,9 @@ button {
   width: 8px;
 }
 .bubble-bot .teks {
+  @apply font-medium;
   max-width: 82%;
   font-size: 15.5px;
-  font-weight: 500;
   line-height: 1.5;
   padding-top: 2px;
   overflow-wrap: break-word;
@@ -342,30 +356,25 @@ button {
 /* ── Kartu umum ────────────────────────────────────────────────────────── */
 
 .kartu {
+  max-width: 92%;
   background: var(--kartu);
   border: 1px solid var(--garis);
   border-radius: var(--r-kartu);
   padding: 18px;
   box-shadow: var(--bayang-kartu);
-  max-width: 92%;
 }
 
 /* Konfirmasi */
 .k-head {
-  display: flex;
-  align-items: center;
+  @apply flex items-center;
   gap: 8px;
   margin-bottom: 14px;
 }
 .k-check {
+  @apply rounded-full flex items-center justify-center flex-none;
   width: 22px;
   height: 22px;
-  border-radius: 50%;
   background: var(--hijau);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
 }
 .k-check::after {
   content: "";
@@ -377,8 +386,8 @@ button {
   margin-top: -2px;
 }
 .k-head .label {
+  @apply font-bold;
   font-size: 15px;
-  font-weight: 700;
   color: var(--hijau);
 }
 .nominal-blok {
@@ -387,50 +396,47 @@ button {
   padding: 15px 16px;
 }
 .badge {
-  display: inline-block;
+  @apply inline-block font-bold uppercase;
   font-size: 10.5px;
-  font-weight: 700;
   letter-spacing: 0.06em;
   color: var(--hijau);
   background: var(--hijau-lembut);
   padding: 3px 9px;
   border-radius: 20px;
-  text-transform: uppercase;
 }
 .baris-tgl {
+  @apply font-semibold;
   float: right;
   font-size: 12px;
-  font-weight: 600;
   color: var(--tinta-45);
 }
 .nominal {
+  @apply font-extrabold;
   font-size: 34px;
-  font-weight: 800;
   letter-spacing: -0.02em;
   margin-top: 8px;
   line-height: 1;
   overflow-wrap: break-word;
 }
 .rincian {
+  @apply font-semibold;
   font-size: 14px;
-  font-weight: 600;
   color: var(--tinta-60);
   margin-top: 7px;
 }
 .chips-label {
+  @apply font-semibold;
   font-size: 12px;
-  font-weight: 600;
   color: var(--tinta-45);
   margin: 14px 0 8px;
 }
 .chips {
-  display: flex;
-  flex-wrap: wrap;
+  @apply flex flex-wrap;
   gap: 7px;
 }
 .chip {
+  @apply font-semibold;
   font-size: 13px;
-  font-weight: 600;
   padding: 8px 14px;
   border-radius: var(--r-chip);
   background: #f1ece3;
@@ -441,7 +447,7 @@ button {
   transform: scale(0.96);
 }
 .chip.aktif {
-  font-weight: 700;
+  @apply font-bold;
   background: var(--hijau);
   color: #fff;
   box-shadow: 0 2px 8px rgba(47, 122, 91, 0.25);
@@ -457,10 +463,10 @@ button {
 /* "Betulkan" — koreksi bebas (nominal/tanggal/hapus), di luar chip kategori.
    Sengaja tenang: yang menonjol tetap angkanya, bukan tombolnya. */
 .betulkan {
+  @apply font-semibold;
   float: right;
   margin-left: 8px;
   font-size: 12px;
-  font-weight: 600;
   color: var(--tinta-45);
   padding: 2px 8px;
   border-radius: 20px;
@@ -477,27 +483,22 @@ button {
 
 /* Klarifikasi & belum-diketahui & untung (nada amber, tenang) */
 .kartu-amber {
+  max-width: 94%;
   background: #fffcf6;
   border: 1px solid rgba(201, 123, 44, 0.28);
   border-radius: var(--r-besar);
   padding: 20px;
   box-shadow: 0 4px 18px rgba(201, 123, 44, 0.08);
-  max-width: 94%;
 }
 .amber-head {
-  display: flex;
-  align-items: center;
+  @apply flex items-center;
   gap: 8px;
 }
 .amber-dot {
+  @apply rounded-full flex items-center justify-center flex-none;
   width: 22px;
   height: 22px;
-  border-radius: 50%;
   background: rgba(201, 123, 44, 0.15);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
 }
 .amber-dot::after {
   content: "";
@@ -507,25 +508,24 @@ button {
   background: var(--amber);
 }
 .amber-head .label {
+  @apply font-bold;
   font-size: 15px;
-  font-weight: 700;
   color: var(--amber-tinta);
 }
 .amber-teks {
+  @apply font-medium;
   font-size: 15px;
-  font-weight: 500;
   line-height: 1.55;
   margin-top: 12px;
 }
 .kurang {
-  display: flex;
-  flex-wrap: wrap;
+  @apply flex flex-wrap;
   gap: 6px;
   margin-top: 12px;
 }
 .kurang span {
+  @apply font-semibold;
   font-size: 12px;
-  font-weight: 600;
   color: var(--amber-tinta2);
   background: var(--amber-lembut);
   padding: 4px 10px;
@@ -534,23 +534,22 @@ button {
 
 /* Kotak "belum diketahui" bergaris putus */
 .belum-kotak {
+  @apply text-center;
   margin: 15px 0 4px;
   border: 1.5px dashed rgba(201, 123, 44, 0.4);
   border-radius: 14px;
   padding: 16px;
-  text-align: center;
   background: rgba(201, 123, 44, 0.05);
 }
 .belum-kap {
+  @apply font-extrabold uppercase;
   font-size: 11px;
-  font-weight: 800;
   letter-spacing: 0.1em;
   color: rgba(162, 98, 31, 0.7);
-  text-transform: uppercase;
 }
 .belum-nilai {
+  @apply font-extrabold;
   font-size: 24px;
-  font-weight: 800;
   color: var(--amber);
   margin-top: 6px;
   letter-spacing: -0.01em;
@@ -558,16 +557,14 @@ button {
 
 /* Kartu untung (stub): kualifikasi "dari bahan" ditonjolkan, angka diredam */
 .untung-kap {
+  @apply font-extrabold uppercase;
   font-size: 11px;
-  font-weight: 800;
   letter-spacing: 0.12em;
   color: var(--hijau);
-  text-transform: uppercase;
 }
 .untung-pill {
-  display: inline-block;
+  @apply inline-block font-bold;
   font-size: 12px;
-  font-weight: 700;
   color: var(--amber-tinta);
   background: var(--amber-lembut);
   padding: 4px 11px;
@@ -586,15 +583,11 @@ button {
 /* Tombol/tautan aksi di dalam kartu — lebih tenang daripada .btn-primary yang
    memiliki bobot layar penuh. Dipakai "Buat laporan PDF" & "Unduh laporan". */
 .btn-kartu {
-  display: block;
+  @apply block w-full text-center no-underline font-bold;
   margin-top: 14px;
-  width: 100%;
-  text-align: center;
-  text-decoration: none;
   background: var(--hijau);
   color: #fff;
   font-size: 15px;
-  font-weight: 700;
   padding: 13px 16px;
   border-radius: 14px;
   transition: transform 0.08s ease;
@@ -610,16 +603,15 @@ button {
 /* Tombol kartu sekunder — dipakai aksi borongan di peninjau impor, yang tak
    boleh terlihat sepenting tombol simpan. */
 .btn-halus {
+  @apply font-semibold;
   background: #f1ece3;
   color: rgba(42, 38, 34, 0.72);
-  font-weight: 600;
 }
 
 /* ── Peninjau impor (aturan #3: belum ada yang masuk buku) ── */
 .imp-list {
+  @apply flex flex-col;
   margin-top: 14px;
-  display: flex;
-  flex-direction: column;
   gap: 10px;
 }
 .imp-row {
@@ -653,8 +645,8 @@ button {
   color: var(--tinta-60);
 }
 .imp-tanda {
+  @apply font-semibold;
   color: #9a6b1f;
-  font-weight: 600;
 }
 .imp-row .chips {
   margin-top: 10px;
@@ -670,30 +662,28 @@ button {
   border-color: rgba(47, 122, 91, 0.3);
 }
 .imp-status {
+  @apply font-bold;
   margin-top: 10px;
   font-size: 12px;
-  font-weight: 700;
   color: var(--hijau);
 }
 .imp-aksi {
-  display: flex;
-  flex-direction: column;
+  @apply flex flex-col;
 }
 
 /* Catatan kaki kartu (kualifikasi jujur, nada tenang) */
 .kartu-catatan {
+  @apply font-medium;
   margin: 10px 0 0;
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--tinta-60);
-  font-weight: 500;
 }
 
 /* ── Kartu untung: daftar produk (laba kotor per porsi) ── */
 .untung-list {
+  @apply flex flex-col;
   margin-top: 12px;
-  display: flex;
-  flex-direction: column;
   gap: 10px;
 }
 .u-row {
@@ -706,69 +696,66 @@ button {
   border: 1px dashed rgba(201, 123, 44, 0.35);
 }
 .u-kepala {
-  display: flex;
-  align-items: center;
+  @apply flex items-center;
   gap: 8px;
 }
 .u-nama {
+  @apply font-bold;
   font-size: 15px;
-  font-weight: 700;
   letter-spacing: -0.01em;
 }
 .u-badge {
+  @apply font-bold uppercase;
   font-size: 10px;
-  font-weight: 700;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
   color: var(--tinta-50);
   background: rgba(42, 38, 34, 0.06);
   padding: 2px 8px;
   border-radius: 20px;
 }
 .u-laba {
+  @apply font-extrabold;
   font-size: 26px;
-  font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--hijau);
   margin-top: 7px;
   line-height: 1;
 }
 .u-porsi {
+  @apply font-semibold;
   font-size: 13px;
-  font-weight: 600;
   color: var(--tinta-50);
   letter-spacing: 0;
 }
 .u-modal {
+  @apply font-semibold;
   font-size: 12.5px;
-  font-weight: 600;
   color: var(--tinta-60);
   margin-top: 6px;
 }
 .u-belum {
+  @apply font-extrabold;
   font-size: 18px;
-  font-weight: 800;
   color: var(--amber);
   margin-top: 7px;
 }
 .u-sebab {
+  @apply font-semibold;
   font-size: 13px;
-  font-weight: 600;
   color: var(--amber-tinta2);
   margin-top: 4px;
 }
 
 /* ── Kartu resep: modal bikin per porsi ── */
 .resep-nama {
+  @apply font-extrabold capitalize;
   font-size: 15px;
-  font-weight: 800;
   letter-spacing: -0.01em;
   margin-top: 8px;
-  text-transform: capitalize;
 }
 .resep-modal {
+  @apply font-extrabold;
   font-size: 26px;
-  font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--hijau);
   margin-top: 4px;
@@ -777,26 +764,23 @@ button {
 
 /* ── Kartu keuangan: untung usaha periode ── */
 .keu-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  @apply flex items-baseline justify-between;
   gap: 8px;
 }
 .keu-kap {
+  @apply font-extrabold uppercase;
   font-size: 11px;
-  font-weight: 800;
   letter-spacing: 0.12em;
   color: var(--hijau);
-  text-transform: uppercase;
 }
 .keu-periode {
+  @apply font-semibold;
   font-size: 12px;
-  font-weight: 600;
   color: var(--tinta-45);
 }
 .keu-laba {
+  @apply font-extrabold;
   font-size: 38px;
-  font-weight: 800;
   letter-spacing: -0.025em;
   color: var(--hijau);
   margin-top: 6px;
@@ -807,27 +791,26 @@ button {
   color: var(--amber);
 }
 .keu-rumus {
+  @apply font-semibold;
   font-size: 12.5px;
-  font-weight: 600;
   color: var(--tinta-50);
   margin-top: 7px;
 }
 .keu-grid {
-  display: grid;
+  @apply grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin-top: 15px;
 }
 .keu-lab {
+  @apply font-bold uppercase;
   font-size: 11px;
-  font-weight: 700;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--tinta-45);
 }
 .keu-val {
+  @apply font-bold;
   font-size: 16px;
-  font-weight: 700;
   margin-top: 3px;
 }
 .keu-prive {
@@ -839,19 +822,16 @@ button {
   padding-top: 12px;
 }
 .keu-pos-kap {
+  @apply font-bold uppercase;
   font-size: 11px;
-  font-weight: 700;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--tinta-45);
   margin-bottom: 8px;
 }
 .keu-pos-row {
-  display: flex;
-  justify-content: space-between;
+  @apply flex justify-between font-semibold;
   gap: 10px;
   font-size: 13.5px;
-  font-weight: 600;
   padding: 4px 0;
 }
 .keu-pos-row span:first-child {
@@ -863,45 +843,41 @@ button {
    bar kosong bergaris putus-putus vs bar terisi 0%. Menggambarnya sama akan
    membuat ketiadaan data terbaca sebagai penilaian buruk (aturan #2). */
 .skor-angka {
+  @apply font-extrabold;
   font-size: 38px;
-  font-weight: 800;
   letter-spacing: -0.025em;
   color: var(--hijau);
   margin-top: 6px;
   line-height: 1;
 }
 .skor-delta {
+  @apply font-semibold;
   font-size: 12.5px;
-  font-weight: 600;
   color: var(--tinta-50);
   margin-top: 7px;
 }
 .skor-komponen {
+  @apply grid;
   margin-top: 16px;
-  display: grid;
   gap: 13px;
 }
 .skor-row-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  @apply flex items-baseline justify-between;
   gap: 8px;
 }
 .skor-lab {
+  @apply font-bold;
   font-size: 13px;
-  font-weight: 700;
   color: var(--tinta);
 }
 .skor-nilai {
+  @apply font-bold whitespace-nowrap;
   font-size: 13px;
-  font-weight: 700;
   color: var(--hijau);
-  white-space: nowrap;
 }
 .skor-nilai.belum {
+  @apply font-semibold italic;
   color: var(--tinta-45);
-  font-weight: 600;
-  font-style: italic;
 }
 .skor-bar,
 .skor-bar-kosong {
@@ -910,11 +886,11 @@ button {
   margin-top: 6px;
 }
 .skor-bar {
+  @apply overflow-hidden;
   background: var(--garis);
-  overflow: hidden;
 }
 .skor-bar span {
-  display: block;
+  @apply block;
   height: 100%;
   background: var(--hijau);
   border-radius: 999px;
@@ -933,16 +909,15 @@ button {
 /* ── Komposer ──────────────────────────────────────────────────────────── */
 
 .komposer {
+  @apply flex-none;
   border-top: 1px solid rgba(42, 38, 34, 0.08);
   background: var(--surface);
   padding: 12px 0 16px;
-  flex: none;
 }
 /* Penanda "sedang membetulkan baris X" — selalu ada jalan keluarnya (Batal),
    supaya pengguna tak merasa terjebak menunggu. */
 .menunggu-koreksi {
-  display: flex;
-  align-items: center;
+  @apply flex items-center font-semibold;
   gap: 10px;
   margin: 0 16px 10px;
   padding: 9px 12px;
@@ -950,23 +925,19 @@ button {
   background: var(--hijau-lembut);
   color: var(--hijau);
   font-size: 13px;
-  font-weight: 600;
 }
 .menunggu-koreksi span {
-  flex: 1;
+  @apply flex-1;
   min-width: 0;
 }
 .menunggu-koreksi button {
-  flex: none;
+  @apply flex-none underline font-bold;
   font-size: 13px;
-  font-weight: 700;
   color: var(--hijau);
-  text-decoration: underline;
 }
 .suggestions {
-  display: flex;
+  @apply flex overflow-x-auto;
   gap: 9px;
-  overflow-x: auto;
   padding: 0 16px 12px;
   scrollbar-width: none;
 }
@@ -974,30 +945,29 @@ button {
   display: none;
 }
 .sugg {
-  flex: none;
+  @apply flex-none font-semibold whitespace-nowrap;
   font-size: 14px;
-  font-weight: 600;
   padding: 11px 16px;
   border-radius: 22px;
   background: var(--kartu);
   border: 1px solid rgba(47, 122, 91, 0.35);
   color: var(--hijau);
-  white-space: nowrap;
   transition: transform 0.08s ease;
 }
 .sugg:active {
   transform: scale(0.97);
 }
 .komposer-baris {
-  display: flex;
-  /* flex-end, bukan center: komposernya textarea yang bisa tumbuh beberapa baris
-     (tempelan catatan), dan tombol kirim harus tetap sejajar baris terakhir. */
+  @apply flex;
+  /* items-end, bukan items-center: komposernya textarea yang bisa tumbuh
+     beberapa baris (tempelan catatan), dan tombol kirim harus tetap sejajar
+     baris terakhir. */
   align-items: flex-end;
   gap: 10px;
   padding: 0 16px;
 }
 .input {
-  flex: 1;
+  @apply flex-1;
   min-width: 0;
   background: var(--kartu);
   border: 1px solid rgba(42, 38, 34, 0.12);
@@ -1024,14 +994,10 @@ button {
   border-color: rgba(47, 122, 91, 0.5);
 }
 .kirim {
+  @apply rounded-full flex-none flex items-center justify-center;
   width: 48px;
   height: 48px;
-  border-radius: 50%;
   background: var(--hijau);
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   box-shadow: 0 3px 10px rgba(47, 122, 91, 0.3);
   transition: transform 0.08s ease;
 }
@@ -1053,7 +1019,7 @@ button {
 
 /* Indikator mengetik */
 .typing {
-  display: flex;
+  @apply flex;
   gap: 4px;
   background: var(--kartu);
   border: 1px solid rgba(42, 38, 34, 0.08);
@@ -1061,11 +1027,10 @@ button {
   border-radius: 16px;
 }
 .typing i {
+  @apply rounded-full animate-dot;
   width: 7px;
   height: 7px;
-  border-radius: 50%;
   background: var(--hijau);
-  animation: dot 1s infinite;
 }
 .typing i:nth-child(2) {
   animation-delay: 0.18s;
@@ -1128,33 +1093,29 @@ button {
 /* ── Masuk (login no.HP + PIN) ─────────────────────────────────────────────── */
 
 .masuk-form {
-  display: flex;
-  flex-direction: column;
+  @apply flex flex-col w-full;
   gap: 12px;
-  width: 100%;
   margin-top: 4px;
 }
 .masuk-form .input {
-  flex: none;
-  width: 100%;
+  @apply flex-none w-full;
   letter-spacing: 0.01em;
 }
 .masuk-error {
+  @apply font-semibold;
   color: var(--amber-tinta);
   background: var(--amber-lembut);
   border-radius: 12px;
   padding: 10px 14px;
   font-size: 13.5px;
-  font-weight: 600;
 }
 .keluar-link {
+  @apply font-semibold cursor-pointer;
   margin-left: auto;
   background: none;
   border: none;
   color: var(--tinta-45);
   font-size: 11.5px;
-  font-weight: 600;
-  cursor: pointer;
   padding: 4px 2px;
 }
 .keluar-link:hover {
@@ -1164,34 +1125,32 @@ button {
 /* Chip periode — dipakai kartu untung, keuangan, & riwayat. Chip aktif
    di-disable: ia penanda periode yang sedang tampil, bukan tombol. */
 .periode-chips {
-  display: flex;
-  flex-wrap: wrap;
+  @apply flex flex-wrap;
   gap: 8px;
   margin-top: 14px;
 }
 .periode-chip {
+  @apply font-bold cursor-pointer;
   font-size: 12.5px;
-  font-weight: 700;
   color: var(--tinta-60);
   background: #f7f3ec;
   border: 1px solid transparent;
   border-radius: 999px;
   padding: 7px 13px;
-  cursor: pointer;
   transition: transform 0.08s ease;
 }
 .periode-chip:active {
   transform: scale(0.97);
 }
 .periode-chip.aktif {
+  @apply cursor-default;
   color: var(--hijau);
   background: #fff;
   border-color: var(--hijau);
-  cursor: default;
 }
 .periode-chip:disabled:not(.aktif) {
+  @apply cursor-default;
   opacity: 0.5;
-  cursor: default;
 }
 /* Di kartu riwayat periodenya menumpang `.k-head` — dorong ke kanan. */
 .k-head .keu-periode {

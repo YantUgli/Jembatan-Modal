@@ -100,7 +100,33 @@ Target akhir tahap: **pengguna tahu untung bersih per produk yang jujur.**
   angka Rupiah (`angka_rupiah`, `app/services/angka.py`) sudah siap dipakai
   begitu pemetaan itu ditulis. Belum ter-wire ke `parser_untuk()`/endpoint
   HTTP unggah (butuh dependency `python-multipart` yang belum terpasang).
-- [ ] Adaptor #2 — CSV/spreadsheet dengan pemetaan kolom bebas via LLM.
+  ✅ **Fixture A3 mendarat 2026-07-29** (`docs/transactional/`, 10 berkas +
+  `SUMBER.md` berstatus verifikasi per berkas) — precondition di atas
+  terpenuhi, `petakan_baris_generik` unblocked. Lihat dua item Adaptor #2
+  di bawah.
+- [ ] **Adaptor #2 (CSV) — `petakan_baris_generik` sungguhan, LLM bukan
+  hardcode per-platform** — sesuai arah [02-arsitektur.md §5](02-arsitektur.md)
+  ("CSV/spreadsheet → parser teks + LLM pemetaan kolom"). LLM memetakan
+  **header** ke kolom kanonik (tanggal/nominal/arah/keterangan); nilai per
+  sel tetap diparse kode (`angka_rupiah`, regex tanggal) — LLM tak pernah
+  menghitung (aturan #1). Diuji **hanya** terhadap fixture ✅ TERVERIFIKASI
+  dulu (`01_bca_mutasi_klikbca`, `05_midtrans_transaction_report`) — fixture
+  🟡 DIREKONSTRUKSI (`02_bri`, `03_mandiri`, `04_bni`) **belum boleh jadi
+  ground truth CI** sampai dicocokkan ke berkas asli (peringatan `SUMBER.md`
+  sendiri). Keyakinan per baris diperluas dengan sebab khas CSV — kolom
+  nominal bertanda ambigu, baris footer ringkasan (mis. Saldo Awal/Akhir
+  Mandiri), locale angka terbalik (OVO: titik=ribuan koma=desimal) — dihitung
+  kode dari struktur baris, bukan dilaporkan LLM (aturan #1/#9).
+  `parser_untuk()` (`app/tools/impor.py`) dapat cabang `sumber == "csv"`.
+- [ ] **Adaptor #2 (CSV) — endpoint HTTP unggah** — slice terpisah dari
+  pemetaan (satu vertical slice = satu hal terverifikasi). Tambah
+  `python-multipart` ke kategori `api` (Pipfile). `POST /impor/unggah`
+  (multipart `UploadFile`, bukan lewat `/chat` JSON) memanggil
+  `baca_csv_generik` → `petakan_baris_generik` → `buat_draft` (fungsi sama
+  jalur teks) → `tinjau_impor` — **tak ada jalur tulis kedua**; alur
+  tinjau/centang/`impor_konfirmasi` di `/chat` tidak berubah sama sekali.
+  Uji negatif wajib: berkas rusak/ekstensi asing/baris tak terpetakan tak
+  pernah lolos ke `transactions` tanpa persetujuan (aturan #3).
 - [ ] Adaptor #3 — export platform (majoo / BukuWarung / **WargaFinance**) — satu adaptor per format, **bukan** patokan arsitektur.
 - [ ] 🎲 **Adaptor QRIS / e-wallet — kandidat prioritas, KONDISIONAL.** Kalau AO bank di Tahap 0 mengonfirmasi bahwa riwayat QRIS mengubah kepercayaan mereka, adaptor ini **naik ke atas** (mungkin mendahului #2 dan #3) karena ia satu-satunya sumber yang membuat laporan *terverifikasi*, bukan self-report. Kalau premisnya gugur, ia turun jadi adaptor biasa. **Jangan jadwalkan sebelum Tahap 0 menjawab.**
 - [x] Penanda keyakinan per baris → yang ragu ditinjau duluan. **Dihitung kode, bukan dilaporkan model** (skema ekstraksi tak punya slot keyakinan — aturan #1 diterapkan pada angka penilaian). Sebab utama "ragu": tanggal yang tidak tertulis, karena tanggal tertebak memindahkan uang antar bulan. Aksi borongan "centang yang sudah jelas" **tak pernah** menyentuh baris ragu.

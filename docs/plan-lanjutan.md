@@ -214,9 +214,14 @@ bukan lagi jawaban overview plafon-agnostik lama — lihat entri
 Ini bukan tugas untuk sesi berikutnya; dicatat ulang di sini supaya tidak
 tergoda mulai duluan karena "kelihatan mudah setelah B3".
 
-- **Pemetaan kolom CSV → transaksi** (`petakan_baris_generik`,
-  `app/impor/csv_generik.py`) — precondition: fixture A3 (contoh berkas impor
-  nyata per format) belum ada. Tetap `NotImplementedError`.
+- ~~**Pemetaan kolom CSV → transaksi**~~ — **UNBLOCKED 2026-07-29**: fixture
+  A3 mendarat (`docs/transactional/`, 10 berkas + `SUMBER.md` berstatus
+  verifikasi per berkas). Lihat `04-rencana-kerja.md` Tahap 3 (Adaptor #2)
+  untuk scope terbaru — dipecah jadi pemetaan (LLM header→kolom kanonik,
+  diuji hanya terhadap fixture ✅ TERVERIFIKASI dulu) dan endpoint unggah
+  (slice terpisah). Ini bukan lagi tugas "Ditahan"; belum ditulis sebagai
+  tugas ber-DoD di dokumen ini — kalau mau digarap, susun DoD-nya dulu
+  seperti E1/E2/F2 sebelum mulai coding.
 - **Endpoint HTTP unggah CSV** — precondition: pemetaan kolom di atas harus
   ada dulu (tak ada gunanya endpoint tanpa konsumen), plus dependency
   `python-multipart` belum terpasang.

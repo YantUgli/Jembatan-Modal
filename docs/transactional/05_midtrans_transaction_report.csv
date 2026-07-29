@@ -1,0 +1,5 @@
+Order ID,Transaction ID,Payment type,Gross Amount,Transaction Status,Transaction Time,Settlement Time,Mdr amount,Customer email
+A87551,1eae238a-cb9e-4f92-b284-aac8b39e4eab,credit_card,145000.00,settlement,2016-06-28 09:42:20,2016-06-28 16:00:00,3277.50,budi@example.com
+TKP2453912939,0c8b481d-8b99-4c6a-b735-aec18be92f28,qris,410400.00,settlement,2023-11-20 07:30:03,2023-11-21 00:30:00,2872.80,siti@example.com
+C17550,249fc620-6017-4540-af7c-5a1c25788f46,bank_transfer,30000.00,settlement,2015-02-26 14:39:33,2015-02-26 16:00:00,4000.00,andi@example.com
+R99012,7b2c1f45-9d3e-4a01-8f6c-1122aabbccdd,gopay,75000.00,refund,2024-01-15 11:05:10,,0.00,dewi@example.com

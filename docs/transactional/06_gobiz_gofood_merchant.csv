@@ -1,0 +1,4 @@
+ID Pesanan,Tanggal,Waktu,Tipe Pesanan,Metode Pembayaran,Penjualan Kotor,Komisi GoBiz,Penjualan Bersih,Status Settlement
+F-2401150001,2024-01-15,12:03,GoFood,GoPay,"85,000","17,000","68,000",Settled
+F-2401150002,2024-01-15,12:47,GoFood,Cash,"42,000","8,400","33,600",Settled
+F-2401150003,2024-01-15,19:22,GoFood,GoPay,"120,000","24,000","96,000",Pending

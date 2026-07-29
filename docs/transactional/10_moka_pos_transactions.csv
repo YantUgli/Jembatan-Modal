@@ -1,0 +1,4 @@
+Transaction ID,Date,Time,Outlet,Payment Method,Gross Sales,Discount,Net Sales
+TRX-0001,2024-01-15,10:12,Cabang Bogor,GoPay,"55,000","5,000","50,000"
+TRX-0002,2024-01-15,11:30,Cabang Bogor,Cash,"30,000","0","30,000"
+TRX-0003,2024-01-15,14:05,Cabang Bogor,OVO,"78,000","8,000","70,000"
